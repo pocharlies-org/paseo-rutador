@@ -45,14 +45,12 @@ export function clearDraft(agentId: string): boolean {
   for (const anchor of anchors.get(agentId) ?? []) {
     const box = composerFor(anchor);
     if (!box) continue;
-    const before = box.value;
     box.focus();
     const done = document.execCommand("delete");
     if (!done || box.value !== "") {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(box, "");
       box.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
     }
-    void before;
     return box.value === "";
   }
   return false;
