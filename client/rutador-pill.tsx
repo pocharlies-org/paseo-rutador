@@ -10,7 +10,7 @@ import { clearDraft, readDraft, registerPillAnchor } from "./composer.ts";
 // so whatever is in the box at that moment is what gets routed; the box is then emptied so the current session does not also send it.
 const SUBAGENT_PREFIX = "Ejecuta esto como subagente (usa la herramienta Agent) y dime el resultado:\n";
 const POLL_MS = 500; // how often the draft is re-read; the resident is only called when the draft settles and changed
-const MIN_CHARS = 12; // below this there is nothing that reads as a task; skip the call
+const MIN_CHARS = 4; // below this there is nothing that reads as a task; skip the call
 
 type Agent = { id: string; workspaceId?: string | null; provider?: string; status: string; archivedAt?: string | null };
 
@@ -78,11 +78,14 @@ export function addRutadorPill(client: PluginClientContext): () => void {
       classified.delete(agent.id);
     }
     const isTask = agent.status === "idle" && taskOf.get(agent.id) === true;
+    // The pill stays mounted while the agent is idle (visible) so its icon registers the composer anchor — the draft cannot be read
+    // without it (a hidden pill never mounts, so it could never detect a task: the egg-and-the-rock). It only lights up ("⇄ Rutear")
+    // once the resident says the draft is a task; the ✦ otherwise is the same always-on affordance paseo-sugiere uses.
     const button = {
-      title: "Abrir esta tarea en otra sesión, o ejecutarla aquí como subagente",
+      title: isTask ? "Abrir esta tarea en otra sesión, o ejecutarla aquí como subagente" : "Rutador: escribe una tarea y aparecerá aquí para rutearla",
       icon: RutadorIcon,
-      label: "Rutador",
-      visible: isTask,
+      label: isTask ? "⇄ Rutear" : "✦",
+      visible: agent.status === "idle",
       behavior: {
         kind: "popover" as const,
         Content: (props: PluginButtonContentProps) => <RouteCard {...props} agentId={agent.id} onNew={newSession} onSub={subagent} />,
