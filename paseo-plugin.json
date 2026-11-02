@@ -1,0 +1,6 @@
+{
+  "id": "paseo-rutador",
+  "name": "Rutador de tareas",
+  "description": "Cuando escribes una tarea en el composer aparece una píldora: ábrela en una sesión nueva del mismo workspace, o ejecútala aquí como subagente.",
+  "requirements": { "paseo": ">=0.13.0 <0.14.0" }
+}

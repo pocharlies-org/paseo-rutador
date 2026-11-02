@@ -1,0 +1,25 @@
+{
+  "name": "paseo-rutador",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Plugin de Paseo: detecta una tarea en el composer y ofrece abrirla en una sesion nueva del mismo workspace o ejecutarla aqui como subagente.",
+  "license": "MIT",
+  "files": ["paseo-plugin.json", "README.md", "index.client.tsx", "index.server.ts", "client/", "server/", "shared/"],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  },
+  "dependencies": {
+    "@getpaseo/plugin": "0.13.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "0.13.0",
+    "@types/node": "^22.20.4",
+    "@types/react": "~19.2.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "typescript": "^5.9.3"
+  }
+}
