@@ -9,7 +9,7 @@ import { CARD_KIND, cardSchema, empezar, estado, responder, TOOL_PREFIX, type Ca
 
 /** The text of an MCP tool result as Paseo hands it over: a string, `{ output: "…" }` (what the Claude provider sends,
  * measured), a content array, or `{ content: [...] }`. */
-export function textOf(output: unknown): string {
+function textOf(output: unknown): string {
   if (typeof output === "string") return output;
   if (typeof (output as { output?: unknown })?.output === "string") return (output as { output: string }).output;
   const parts = Array.isArray(output) ? output : Array.isArray((output as { content?: unknown })?.content) ? (output as { content: unknown[] }).content : [];
@@ -19,7 +19,7 @@ export function textOf(output: unknown): string {
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
-export function cardFrom(item: { name: string; status: string; detail: unknown }): CardData | null {
+function cardFrom(item: { name: string; status: string; detail: unknown }): CardData | null {
   const detail = (item.detail ?? {}) as { type?: string; input?: unknown; output?: unknown };
   const input = (detail.input ?? {}) as Record<string, unknown>;
   const output = textOf(detail.output);

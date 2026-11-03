@@ -1,6 +1,6 @@
 # paseo-rutador
 
-Plugin de Paseo que ofrece sesiones nuevas igual que Claude Desktop. No hay píldora: es el agente quien decide, con
+Plugin de Paseo que ofrece sesiones nuevas igual que Claude Desktop. Es el agente quien decide, con
 las mismas reglas que Desktop ("Starting other sessions"), y la conversación muestra una tarjeta.
 
 - **Oferta** (`initiation: "offer"`): cuando le pides una tarea propia, el primer mensaje del agente es

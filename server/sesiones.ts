@@ -23,7 +23,7 @@ export interface Task {
   childAgentId?: string;
 }
 
-export const MAX_PROPOSALS_PER_TURN = 3;
+const MAX_PROPOSALS_PER_TURN = 3;
 
 const randomId = () => `task_${Math.random().toString(36).slice(2, 10).padEnd(8, "0")}`;
 
