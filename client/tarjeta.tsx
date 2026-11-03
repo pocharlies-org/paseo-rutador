@@ -7,9 +7,11 @@ import { CARD_KIND, cardSchema, empezar, estado, responder, TOOL_PREFIX, type Ca
 // the agent waits; an own-initiative proposal is a «Nueva tarea» card the user starts with a click; a session started on the
 // user's word is one line. dismiss_task leaves no row (its card says «Retirada»).
 
-/** The text of an MCP tool result as Paseo hands it over: a string, a content array, or `{ content: [...] }`. */
+/** The text of an MCP tool result as Paseo hands it over: a string, `{ output: "…" }` (what the Claude provider sends,
+ * measured), a content array, or `{ content: [...] }`. */
 export function textOf(output: unknown): string {
   if (typeof output === "string") return output;
+  if (typeof (output as { output?: unknown })?.output === "string") return (output as { output: string }).output;
   const parts = Array.isArray(output) ? output : Array.isArray((output as { content?: unknown })?.content) ? (output as { content: unknown[] }).content : [];
   const text = parts.map((p) => (typeof (p as { text?: unknown })?.text === "string" ? (p as { text: string }).text : "")).join("");
   return text || (output == null ? "" : JSON.stringify(output));
