@@ -1,9 +1,9 @@
 {
   "name": "paseo-rutador",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Plugin de Paseo: detecta una tarea en el composer y ofrece abrirla en una sesion nueva del mismo workspace o ejecutarla aqui como subagente.",
+  "description": "Plugin de Paseo: el agente ofrece sesiones nuevas como Claude Desktop (tarjeta Nueva sesión / Hazlo aquí) con su propio MCP start_session.",
   "license": "MIT",
   "files": ["paseo-plugin.json", "README.md", "index.client.tsx", "index.server.ts", "client/", "server/", "shared/"],
   "scripts": {
@@ -11,11 +11,11 @@
     "test": "node --test --experimental-strip-types test/*.test.ts"
   },
   "dependencies": {
-    "@getpaseo/plugin": "0.13.0",
+    "@getpaseo/plugin": "0.14.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@getpaseo/client": "0.13.0",
+    "@getpaseo/client": "0.14.0",
     "@types/node": "^22.20.4",
     "@types/react": "~19.2.0",
     "react": "19.1.0",

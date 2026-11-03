@@ -1,14 +1,31 @@
 # paseo-rutador
 
-Plugin de Paseo. Cuando escribes una **tarea** en el composer (el residente lo decide con una llamada barata), aparece una píldora
-`✦ Rutador`. Al abrirla, dos opciones:
+Plugin de Paseo que ofrece sesiones nuevas igual que Claude Desktop. Es el agente quien decide, con
+las mismas reglas que Desktop ("Starting other sessions"), y la conversación muestra una tarjeta.
 
-- **Nueva sesión (mismo workspace)** — crea un agente hermano en el mismo workspace con la tarea como primer prompt y vacía el composer.
-- **Subagente aquí** — manda la tarea al agente actual pidiéndole que la ejecute con su herramienta `Agent`, y vacía el composer.
+- **Oferta** (`initiation: "offer"`): cuando le pides una tarea propia, el primer mensaje del agente es
+  `start_session` con un título y nada más. Sale la tarjeta **«Nueva sesión» / «Hazlo aquí»** y la llamada espera tu
+  respuesta. «Hazlo aquí»: el agente sigue en esta sesión. «Nueva sesión»: el agente escribe el brief y se abre un
+  agente hermano en el mismo workspace (mismo proveedor, modelo, modo y nivel de razonamiento). Si escribes otro
+  mensaje en vez de contestar, la oferta se cierra.
+- **Lo pediste tú** (`"user_asked"`): «ábrelo en otra sesión» la abre ya.
+- **Propuesta** (`"own_initiative"`): una tarea que el agente propone por su cuenta (un seguimiento, algo que vio de
+  paso) sale como tarjeta **«Nueva tarea»** con «Empezar»; como mucho tres por turno. `dismiss_task` la retira.
+- Lo rápido (una pregunta, una edición, unas pocas herramientas) se queda en la sesión.
 
-Molde calcado de `paseo-sugiere` (misma píldora de composer). El server solo responde `task: true/false` con una llamada al residente
-vía **LiteLLM** (base + token de la config del daemon); el router local `qwen38-off` que usa sugiere no está levantado en paseo-0. Toda la
-detección y el ruteo viven en el client. Si no hay ruta al residente, no sale la píldora (nunca un error).
+## Cómo está hecho
+
+- **Servidor**: en `agent.session_open` (sesión creada o reanudada, solo proveedor `claude`) añade su propio servidor
+  MCP `rutador` (HTTP en 127.0.0.1, un URL por agente, token bearer, `alwaysLoad`) con `start_session` y
+  `dismiss_task`. Las reglas de Desktop van en las `instructions` del servidor, que Claude Code mete en el prompt de
+  sistema. No es una tool de plugin de Paseo porque el daemon corta esas a los 10 minutos y una oferta espera lo que
+  haga falta: la respuesta de `tools/call` es un stream SSE con keepalive. Textos en `server/textos.ts`; la máquina de
+  estados de ofertas y propuestas, sin I/O, en `server/sesiones.ts` (con su test).
+- **Cliente**: un transformer convierte la llamada `mcp__rutador__start_session` en la tarjeta (`client/tarjeta.tsx`);
+  los botones van por RPC al servidor (`shared/contract.ts`). `paseo-plan` deja pasar las llamadas `mcp__rutador__*`
+  (su transformer se queda con todos los demás tool calls).
+- Al habilitar o recargar el plugin, cada sesión parada recarga su proceso antes de su siguiente mensaje y entonces
+  recibe el servidor; las que están trabajando siguen como estaban hasta terminar.
 
 ## Desarrollo
 

@@ -1,6 +1,6 @@
 {
   "id": "paseo-rutador",
-  "name": "Rutador de tareas",
-  "description": "Cuando escribes una tarea en el composer aparece una píldora: ábrela en una sesión nueva del mismo workspace, o ejecútala aquí como subagente.",
-  "requirements": { "paseo": ">=0.13.0" }
+  "name": "Sesiones nuevas",
+  "description": "Como Claude Desktop: el agente ofrece abrir una tarea en una sesión nueva del mismo workspace con una tarjeta «Nueva sesión» / «Hazlo aquí», y propone las siguientes tareas como tarjetas que se empiezan con un clic.",
+  "requirements": { "paseo": ">=0.14.0" }
 }
