@@ -1,0 +1,38 @@
+name: CI
+
+# No secrets anywhere in this workflow: it runs the code of the pull request on the self-hosted runners. `pull_request`, NEVER
+# `pull_request_target`. `--ignore-scripts`: an npm lifecycle script of a dependency must not execute on the runner.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: arc-k8s
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0              # the history sweep reads every commit of the pull request
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+
+      # Pull requests only, over their own commits (base..head). On a push to main the commit is the squash, whose title
+      # carries the ticket key the merge gate asks for, and the first commits of this repo predate the noreply identity:
+      # sweeping either would keep main red for nothing. The tree that lands on main is the one checked here.
+      - name: No private data in the tree or the pull request's commits
+        if: github.event_name == 'pull_request'
+        env:
+          RANGO: "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+        run: scripts/check-internal.sh "$RANGO"
