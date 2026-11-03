@@ -9,9 +9,11 @@ export default function contribute(server: PluginServerContext) {
   server.handle(clasificar, async ({ text }) => {
     try {
       const answer = await residentRequest(classifyBody(text));
-      if (answer.status !== 200) return { task: false };
-      return { task: isTask(JSON.parse(answer.text)) };
-    } catch {
+      const task = answer.status === 200 ? isTask(JSON.parse(answer.text)) : false;
+      console.log(`rutador: clasificar status=${answer.status} task=${task} texto=${JSON.stringify(text.slice(0, 60))}`);
+      return { task };
+    } catch (error) {
+      console.warn(`rutador: clasificar falló (${error instanceof Error ? error.message : "unknown"}) → task=false`);
       return { task: false };
     }
   });
