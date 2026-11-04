@@ -2,6 +2,7 @@
 // A started session is a sibling agent in the caller's workspace, same provider, model, mode and thinking level.
 import type { PaseoApi } from "@getpaseo/client";
 import type { McpToolResult } from "./mcp.ts";
+import { Registro } from "./registro.ts";
 import { Sessions, type Task } from "./sesiones.ts";
 import { result } from "./textos.ts";
 
@@ -10,25 +11,38 @@ const brief = (prompt: string, background: string) => (background ? `${prompt}\n
 
 export class Rutador {
   readonly sessions = new Sessions();
-  private startedFromCard = new Set<string>(); // task ids this process never knew, started from their card: once only
-
+  private readonly registro: Registro;
   private readonly paseo: () => PaseoApi | null;
 
-  constructor(paseo: () => PaseoApi | null) {
+  constructor(paseo: () => PaseoApi | null, registroPath: string) {
     this.paseo = paseo;
+    this.registro = new Registro(registroPath);
   }
 
-  /** A sibling agent in the same workspace as `parentId`, seeded with the brief. Returns its id. */
-  private async createSibling(parentId: string, title: string, prompt: string): Promise<string> {
+  /** The models the user can pick on a card: those of the session's provider, and the one it runs now. */
+  async models(agentId: string): Promise<{ current: string | null; models: { id: string; label: string }[] }> {
+    const paseo = this.paseo();
+    if (!paseo) return { current: null, models: [] };
+    const parent = (await paseo.agents.ref(agentId).refresh())?.agent;
+    if (!parent) return { current: null, models: [] };
+    const list = await paseo.providers.listModels(parent.provider);
+    return { current: parent.model ?? null, models: (list.models ?? []).map((m) => ({ id: m.id, label: m.label ?? m.id })) };
+  }
+
+  /** A sibling agent in the same workspace as `parentId`, seeded with the brief, on the parent's provider and mode, and
+   * on `model` when the user picked one (then with that model's own default thinking level). Returns its id. */
+  private async createSibling(parentId: string, title: string, prompt: string, model?: string): Promise<string> {
     const paseo = this.paseo();
     if (!paseo) throw new Error("Paseo API not ready");
     const parent = (await paseo.agents.ref(parentId).refresh())?.agent;
     if (!parent?.workspaceId) throw new Error("the session has no workspace");
+    const picked = model && model !== parent.model ? model : undefined;
+    const runs = picked ?? parent.model;
     const child = await paseo.workspaces.ref(parent.workspaceId).agents.create({
       config: {
-        provider: parent.model ? `${parent.provider}/${parent.model}` : parent.provider,
+        provider: runs ? `${parent.provider}/${runs}` : parent.provider,
         ...(parent.currentModeId ? { modeId: parent.currentModeId } : {}),
-        ...(parent.thinkingOptionId ? { thinkingOptionId: parent.thinkingOptionId } : {}),
+        ...(!picked && parent.thinkingOptionId ? { thinkingOptionId: parent.thinkingOptionId } : {}),
       },
       title: title.slice(0, 200),
       prompt,
@@ -37,12 +51,13 @@ export class Rutador {
   }
 
   /** Claims, creates, and records; on failure the task goes back to where it was. */
-  private async startTask(agentId: string, taskId: string, prompt: string): Promise<{ task: Task; childId: string } | { error: string }> {
+  private async startTask(agentId: string, taskId: string, prompt: string, model?: string): Promise<{ task: Task; childId: string } | { error: string }> {
     const claim = this.sessions.claim(agentId, taskId);
     if ("refused" in claim) return { error: claim.refused };
     try {
-      const childId = await this.createSibling(agentId, claim.task.title, prompt);
+      const childId = await this.createSibling(agentId, claim.task.title, prompt, model ?? claim.task.model);
       this.sessions.started(taskId, childId);
+      if (claim.task.kind === "proposal") this.registro.set(agentId, taskId, "started");
       return { task: claim.task, childId };
     } catch (error) {
       this.sessions.release(taskId, claim.was);
@@ -111,7 +126,7 @@ export class Rutador {
   /** Where each card of the agent stands, for the client. */
   states(agentId: string): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const id of this.startedFromCard) out[id] = "started";
+    Object.assign(out, this.registro.ofAgent(agentId));
     for (const t of this.sessions.ofAgent(agentId)) out[t.taskId] = t.state;
     return out;
   }
@@ -119,26 +134,30 @@ export class Rutador {
   dismissTask(agentId: string, args: Record<string, unknown>): McpToolResult {
     const taskId = str(args.task_id);
     if (!taskId) return { isError: true, text: "task_id is required." };
-    const was = this.sessions.dismiss(agentId, taskId);
-    return { text: was === "pending" || was === "awaiting_brief" || was === "asking" ? result.dismissed(taskId) : result.dismissNoop(taskId, was) };
+    let was = this.sessions.dismiss(agentId, taskId);
+    if (was === "unknown") was = this.registro.get(agentId, taskId) ?? "pending"; // a card from before a restart: only the record knows it
+    const dismissed = was === "pending" || was === "awaiting_brief" || was === "asking";
+    if (dismissed) this.registro.set(agentId, taskId, "dismissed");
+    return { text: dismissed ? result.dismissed(taskId) : result.dismissNoop(taskId, was) };
   }
 
   /** A click on an own-initiative card. A task this process does not know (the daemon restarted since) starts from the
-   * brief the card carries, which is the agent's own tool input. */
-  async startFromCard(agentId: string, taskId: string, title: string, prompt: string): Promise<{ ok: boolean; error?: string }> {
+   * brief the card carries, which is the agent's own tool input, unless the record says it was started or dismissed. */
+  async startFromCard(agentId: string, taskId: string, title: string, prompt: string, model?: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.sessions.get(taskId)) {
       if (!prompt) return { ok: false, error: "sin brief" };
-      if (this.startedFromCard.has(taskId)) return { ok: false, error: "started" };
-      this.startedFromCard.add(taskId);
+      const final = this.registro.get(agentId, taskId);
+      if (final) return { ok: false, error: final };
+      this.registro.set(agentId, taskId, "started"); // before the await: a second click finds it taken
       try {
-        await this.createSibling(agentId, title, prompt);
+        await this.createSibling(agentId, title, prompt, model);
         return { ok: true };
       } catch (error) {
-        this.startedFromCard.delete(taskId);
+        this.registro.set(agentId, taskId, undefined);
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     }
-    const started = await this.startTask(agentId, taskId, this.sessions.get(taskId)!.prompt ?? prompt);
+    const started = await this.startTask(agentId, taskId, this.sessions.get(taskId)!.prompt ?? prompt, model);
     return "error" in started ? { ok: false, error: started.error } : { ok: true };
   }
 }
