@@ -1,7 +1,7 @@
 import type { PluginClientContext, PluginTimelineItemProps } from "@getpaseo/plugin/client";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Pressable, Text, View } from "react-native";
-import { CARD_KIND, cardSchema, empezar, estado, responder, TOOL_PREFIX, type CardData } from "../shared/contract.ts";
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { CARD_KIND, cardSchema, empezar, estado, modelos, responder, TOOL_PREFIX, type CardData } from "../shared/contract.ts";
 
 // The tool calls become cards in the conversation, like Claude Desktop's: an offer asks «Nueva sesión» / «Hazlo aquí» while
 // the agent waits; an own-initiative proposal is a «Nueva tarea» card the user starts with a click; a session started on the
@@ -18,6 +18,17 @@ function textOf(output: unknown): string {
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+// How each proposal ended, as the timeline tells it: a later dismiss_task, or start_session with its proposal_id. The
+// transformer sees those items, the card does not, so they meet here and the card changes the moment the call lands.
+const finals = new Map<string, "dismissed" | "started">();
+const listeners = new Set<() => void>();
+function markFinal(taskId: string, final: "dismissed" | "started") {
+  if (finals.get(taskId) === final) return;
+  finals.set(taskId, final);
+  queueMicrotask(() => listeners.forEach((l) => l())); // transformers run while the timeline renders: no setState there
+}
+const subscribeFinals = (l: () => void) => (listeners.add(l), () => void listeners.delete(l));
 
 function cardFrom(item: { name: string; status: string; detail: unknown }): CardData | null {
   const detail = (item.detail ?? {}) as { type?: string; input?: unknown; output?: unknown };
@@ -49,12 +60,66 @@ function outcome(d: CardData): string {
   return r.slice(0, 160);
 }
 
+type Models = { current: string | null; models: { id: string; label: string }[] };
+
 export function addSessionCards(client: PluginClientContext): () => void {
+  const modelsOf = new Map<string, Promise<Models>>(); // one fetch per agent, shared by its cards
+
+  /** «Modelo: Opus 5.5 ▾» and, open, the list of the session's provider's models. `value` null = the session's own. */
+  function ModelPicker({ agentId, value, onChange, disabled, c }: { agentId: string; value: string | null; onChange: (id: string) => void; disabled: boolean; c: PluginTimelineItemProps["theme"]["colors"] }) {
+    const [data, setData] = useState<Models | null>(null);
+    const [open, setOpen] = useState(false);
+    useEffect(() => {
+      let p = modelsOf.get(agentId);
+      if (!p) {
+        p = client.rpc(modelos, { agentId });
+        modelsOf.set(agentId, p);
+        p.catch(() => modelsOf.delete(agentId));
+      }
+      let live = true;
+      p.then((m) => live && setData(m), () => {});
+      return () => void (live = false);
+    }, [agentId]);
+    if (!data?.models.length) return null;
+    const chosen = value ?? data.current;
+    const label = (id: string | null) => data.models.find((m) => m.id === id)?.label ?? id ?? "el de esta sesión";
+    return (
+      <View style={{ marginTop: 8 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Modelo de la sesión nueva" disabled={disabled} onPress={() => setOpen(!open)}>
+          <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+            Modelo: <Text style={{ color: c.foreground, fontWeight: "500" }}>{label(chosen)}</Text> {open ? "▴" : "▾"}
+          </Text>
+        </Pressable>
+        {open ? (
+          <ScrollView style={{ maxHeight: 220, marginTop: 4, borderWidth: 1, borderColor: c.border, borderRadius: 6, backgroundColor: c.surface1 }}>
+            {data.models.map((m) => (
+              <Pressable
+                key={m.id}
+                accessibilityRole="button"
+                accessibilityLabel={m.label}
+                onPress={() => {
+                  onChange(m.id);
+                  setOpen(false);
+                }}
+                style={{ paddingVertical: 5, paddingHorizontal: 10, backgroundColor: m.id === chosen ? c.surface2 : "transparent" }}
+              >
+                <Text style={{ color: c.foreground, fontSize: 13 }}>{m.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
+      </View>
+    );
+  }
+
   function Card({ agentId, item, theme }: PluginTimelineItemProps<CardData>) {
     const c = theme.colors;
     const d = item.data;
     const [sent, setSent] = useState<string | null>(null);
-    const [state, setState] = useState<string | null>(null);
+    const [fetched, setState] = useState<string | null>(null);
+    const [model, setModel] = useState<string | null>(null);
+    const final = useSyncExternalStore(subscribeFinals, () => (d.taskId ? finals.get(d.taskId) : undefined));
+    const state = final ?? fetched;
 
     const refresh = useCallback(() => {
       if (d.initiation !== "own_initiative" || !d.taskId) return;
@@ -83,12 +148,12 @@ export function addSessionCards(client: PluginClientContext): () => void {
     );
     const answer = (choice: "new" | "here") => {
       setSent(choice);
-      void client.rpc(responder, { agentId, choice }).then((r) => !r.ok && setSent(null), () => setSent(null));
+      void client.rpc(responder, { agentId, choice, ...(choice === "new" && model ? { model } : {}) }).then((r) => !r.ok && setSent(null), () => setSent(null));
     };
     const start = () => {
       if (!d.taskId) return;
       setSent("start");
-      void client.rpc(empezar, { agentId, taskId: d.taskId, title: d.title, prompt: d.prompt }).then(
+      void client.rpc(empezar, { agentId, taskId: d.taskId, title: d.title, prompt: d.prompt, ...(model ? { model } : {}) }).then(
         (r) => {
           if (!r.ok) setSent(null);
           refresh();
@@ -102,10 +167,13 @@ export function addSessionCards(client: PluginClientContext): () => void {
     let body: ReactNode;
     if (d.initiation === "offer" && d.status === "running") {
       body = (
-        <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-          {button("Nueva sesión", () => answer("new"), true)}
-          {button("Hazlo aquí", () => answer("here"))}
-        </View>
+        <>
+          <ModelPicker agentId={agentId} value={model} onChange={setModel} disabled={sent !== null} c={c} />
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            {button("Nueva sesión", () => answer("new"), true)}
+            {button("Hazlo aquí", () => answer("here"))}
+          </View>
+        </>
       );
     } else if (d.initiation === "own_initiative" && d.status === "completed" && d.taskId) {
       const done = state === "started" || sent === "start";
@@ -115,7 +183,10 @@ export function addSessionCards(client: PluginClientContext): () => void {
         ) : done ? (
           <Text style={{ color: c.foregroundMuted, fontSize: 12, marginTop: 4 }}>Empezada en una sesión nueva</Text>
         ) : (
-          <View style={{ marginTop: 8, flexDirection: "row" }}>{button("Empezar", start, true)}</View>
+          <>
+            <ModelPicker agentId={agentId} value={model} onChange={setModel} disabled={sent !== null} c={c} />
+            <View style={{ marginTop: 8, flexDirection: "row" }}>{button("Empezar", start, true)}</View>
+          </>
         );
     } else if (d.status === "running") {
       body = <Text style={{ color: c.foregroundMuted, fontSize: 12, marginTop: 4 }}>Abriendo…</Text>;
@@ -146,9 +217,14 @@ export function addSessionCards(client: PluginClientContext): () => void {
     query: { itemType: "tool_call" },
     transform: ({ item }) => {
       if (!item.name.startsWith(TOOL_PREFIX)) return undefined;
-      if (item.name === `${TOOL_PREFIX}dismiss_task`) return { items: [] };
+      if (item.name === `${TOOL_PREFIX}dismiss_task`) {
+        const detail = (item.detail ?? {}) as { input?: { task_id?: unknown }; output?: unknown };
+        if (typeof detail.input?.task_id === "string" && /^Withdrew the proposal/.test(textOf(detail.output))) markFinal(detail.input.task_id, "dismissed");
+        return { items: [] };
+      }
       if (item.name !== `${TOOL_PREFIX}start_session`) return undefined;
       const data = cardFrom(item);
+      if (data?.initiation === "brief" && data.taskId && /^Started the proposal/.test(data.result)) markFinal(data.taskId, "started");
       return data ? { items: [{ type: "plugin", kind: CARD_KIND, version: 1, data }] } : undefined;
     },
   });
