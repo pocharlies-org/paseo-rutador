@@ -12,7 +12,8 @@ import { DISMISS_DESCRIPTION, DISMISS_SCHEMA, INSTRUCTIONS, START_DESCRIPTION, S
 // guidance as the server's instructions. The client draws the tool calls as cards («Nueva sesión» / «Hazlo aquí»).
 export default function contribute(server: PluginServerContext) {
   let paseo: PaseoApi | null = null;
-  const rutador = new Rutador(() => paseo, join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "rutador-tareas.json"));
+  const home = process.env.PASEO_HOME ?? join(homedir(), ".paseo");
+  const rutador = new Rutador(() => paseo, join(home, "rutador-tareas.json"));
 
   // While an offer is up, a user message on that agent closes it (Desktop: "they sent a new message instead").
   const watchUserMessages = (agentId: string) => {
@@ -36,7 +37,7 @@ export default function contribute(server: PluginServerContext) {
       if (tool === "dismiss_task") return rutador.dismissTask(agentId, args);
       return { isError: true, text: `Unknown tool: ${tool}` };
     },
-  });
+  }, join(home, "rutador-mcp.json"));
   mcp.catch((error) => console.error("rutador: MCP server did not start", error));
 
   // Only the claude provider: a provider without MCP support would fail to open with an extra server.
