@@ -20,6 +20,7 @@ export interface Task {
   prompt?: string;
   kind: "offer" | "proposal";
   state: TaskState;
+  model?: string; // chosen on the card; none = the parent's
   childAgentId?: string;
 }
 
@@ -57,18 +58,21 @@ export class Sessions {
     return { task, outcome };
   }
 
-  private settle(agentId: string, state: TaskState, outcome: OfferOutcome): boolean {
+  private settle(agentId: string, state: TaskState, outcome: OfferOutcome, model?: string): boolean {
     const open = this.asking.get(agentId);
     if (!open) return false;
     this.asking.delete(agentId);
-    this.tasks.get(open.taskId)!.state = state;
+    const task = this.tasks.get(open.taskId)!;
+    task.state = state;
+    if (model) task.model = model;
     open.resolve(outcome);
     return true;
   }
 
-  /** The user's click on the card. False when the agent has no offer up (answered already, closed, never opened). */
-  answer(agentId: string, choice: Choice): boolean {
-    return choice === "here" ? this.settle(agentId, "here", { kind: "here" }) : this.settle(agentId, "awaiting_brief", { kind: "new" });
+  /** The user's click on the card, with the model picked for the new session. False when the agent has no offer up
+   * (answered already, closed, never opened). */
+  answer(agentId: string, choice: Choice, model?: string): boolean {
+    return choice === "here" ? this.settle(agentId, "here", { kind: "here" }) : this.settle(agentId, "awaiting_brief", { kind: "new" }, model);
   }
 
   /** The user sent a new message instead of answering: the offer closes and the task gets no session. */

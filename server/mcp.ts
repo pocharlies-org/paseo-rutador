@@ -1,8 +1,10 @@
 // A minimal MCP server over Streamable HTTP on 127.0.0.1, one URL per agent (`/mcp/<agentId>`), bearer-protected.
 // Why not a Paseo plugin tool: the daemon cuts those at 10 minutes, and an offer waits for the user as long as it takes.
-// `tools/call` answers as an SSE stream that sends a comment every few seconds, so no HTTP client times the wait out;
-// everything else answers plain JSON. No sessions, no server-initiated messages: Claude Code needs neither.
+// `tools/call` answers as an SSE stream that sends a progress notification every few seconds: Claude Code aborts a
+// tool that sends "no response or progress for 300s", and an SSE comment is not progress. Everything else answers plain
+// JSON. No sessions, no server-initiated messages: Claude Code needs neither.
 import { randomBytes } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -28,8 +30,14 @@ const MAX_BODY = 1024 * 1024;
 
 type Rpc = { jsonrpc: "2.0"; id?: string | number | null; method?: string; params?: Record<string, unknown> };
 
-export async function startMcpServer(handler: McpHandler): Promise<{ url: (agentId: string) => string; token: string; close: () => Promise<void> }> {
-  const token = randomBytes(24).toString("hex");
+/** `statePath` keeps the port and token across plugin reloads: the sessions already open hold that URL and header, and
+ * a new port would leave them without the tools until each one is reloaded. */
+export async function startMcpServer(handler: McpHandler, statePath: string): Promise<{ url: (agentId: string) => string; token: string; close: () => Promise<void> }> {
+  let saved: { port?: unknown; token?: unknown } = {};
+  try {
+    saved = JSON.parse(readFileSync(statePath, "utf8"));
+  } catch {}
+  const token = typeof saved.token === "string" && /^[0-9a-f]{48}$/.test(saved.token) ? saved.token : randomBytes(24).toString("hex");
   const calls = new Map<string, AbortController>(); // `${agentId}\0${rpcId}` -> the call, for notifications/cancelled
 
   const server = createServer((req, res) => {
@@ -97,7 +105,14 @@ export async function startMcpServer(handler: McpHandler): Promise<{ url: (agent
     });
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     res.write(": open\n\n");
-    const keepalive = setInterval(() => res.write(": keepalive\n\n"), KEEPALIVE_MS);
+    const progressToken = (msg.params?._meta as { progressToken?: unknown } | undefined)?.progressToken;
+    if (progressToken === undefined) console.error("rutador: tools/call without progressToken, a long wait may be cut");
+    let progress = 0;
+    const keepalive = setInterval(() => {
+      if (progressToken === undefined) return void res.write(": keepalive\n\n");
+      const note = { jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress: ++progress, message: "waiting for the user" } };
+      res.write(`event: message\ndata: ${JSON.stringify(note)}\n\n`);
+    }, KEEPALIVE_MS);
     try {
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
@@ -117,11 +132,19 @@ export async function startMcpServer(handler: McpHandler): Promise<{ url: (agent
     }
   }
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => resolve());
-  });
+  const listen = (p: number) =>
+    new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(p, "127.0.0.1", () => resolve());
+    });
+  const savedPort = typeof saved.port === "number" && Number.isInteger(saved.port) && saved.port > 0 && saved.port < 65536 ? saved.port : 0;
+  await listen(savedPort).catch(() => listen(0)); // taken by something else: a new port, and open sessions need a reload
   const { port } = server.address() as AddressInfo;
+  try {
+    writeFileSync(statePath, JSON.stringify({ port, token }), { mode: 0o600 });
+  } catch (error) {
+    console.error("rutador: could not save the MCP port", error);
+  }
   console.log(`rutador: mcp on 127.0.0.1:${port}`);
   return {
     token,

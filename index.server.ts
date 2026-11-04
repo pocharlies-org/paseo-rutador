@@ -1,6 +1,8 @@
 import type { PaseoApi } from "@getpaseo/client";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { empezar, estado, responder, SERVER } from "./shared/contract.ts";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { empezar, estado, modelos, responder, SERVER, TOOL_PREFIX } from "./shared/contract.ts";
 import { Rutador } from "./server/herramientas.ts";
 import { startMcpServer } from "./server/mcp.ts";
 import { DISMISS_DESCRIPTION, DISMISS_SCHEMA, INSTRUCTIONS, START_DESCRIPTION, START_SCHEMA } from "./server/textos.ts";
@@ -10,7 +12,8 @@ import { DISMISS_DESCRIPTION, DISMISS_SCHEMA, INSTRUCTIONS, START_DESCRIPTION, S
 // guidance as the server's instructions. The client draws the tool calls as cards («Nueva sesión» / «Hazlo aquí»).
 export default function contribute(server: PluginServerContext) {
   let paseo: PaseoApi | null = null;
-  const rutador = new Rutador(() => paseo);
+  const home = process.env.PASEO_HOME ?? join(homedir(), ".paseo");
+  const rutador = new Rutador(() => paseo, join(home, "rutador-tareas.json"));
 
   // While an offer is up, a user message on that agent closes it (Desktop: "they sent a new message instead").
   const watchUserMessages = (agentId: string) => {
@@ -34,7 +37,7 @@ export default function contribute(server: PluginServerContext) {
       if (tool === "dismiss_task") return rutador.dismissTask(agentId, args);
       return { isError: true, text: `Unknown tool: ${tool}` };
     },
-  });
+  }, join(home, "rutador-mcp.json"));
   mcp.catch((error) => console.error("rutador: MCP server did not start", error));
 
   // Only the claude provider: a provider without MCP support would fail to open with an extra server.
@@ -62,12 +65,22 @@ export default function contribute(server: PluginServerContext) {
     rutador.sessions.turnStarted(event.agent.id);
   });
 
-  server.handle(responder, ({ agentId, choice }) => ({ ok: rutador.sessions.answer(agentId, choice) }));
-  server.handle(empezar, async ({ agentId, taskId, title, prompt }, context) => {
+  // The plugin's own tools never ask, in any mode, like Desktop's: the card is the question («Always ask» drew both).
+  server.on("agent.permission_requested", async ({ agent, request }, context) => {
+    if (!request.name.startsWith(TOOL_PREFIX)) return;
+    await context.paseo.agents.ref(agent.id).respondToPermission({ requestId: request.id, response: { behavior: "allow" } });
+  });
+
+  server.handle(responder, ({ agentId, choice, model }) => ({ ok: rutador.sessions.answer(agentId, choice, model) }));
+  server.handle(empezar, async ({ agentId, taskId, title, prompt, model }, context) => {
     paseo ??= context.paseo;
-    return rutador.startFromCard(agentId, taskId, title, prompt);
+    return rutador.startFromCard(agentId, taskId, title, prompt, model);
   });
   server.handle(estado, ({ agentId }) => ({ tasks: rutador.states(agentId) }));
+  server.handle(modelos, async ({ agentId }, context) => {
+    paseo ??= context.paseo;
+    return rutador.models(agentId);
+  });
 
   return () => mcp.then((m) => m.close(), () => {});
 }

@@ -6,11 +6,13 @@ las mismas reglas que Desktop ("Starting other sessions"), y la conversación mu
 - **Oferta** (`initiation: "offer"`): cuando le pides una tarea propia, el primer mensaje del agente es
   `start_session` con un título y nada más. Sale la tarjeta **«Nueva sesión» / «Hazlo aquí»** y la llamada espera tu
   respuesta. «Hazlo aquí»: el agente sigue en esta sesión. «Nueva sesión»: el agente escribe el brief y se abre un
-  agente hermano en el mismo workspace (mismo proveedor, modelo, modo y nivel de razonamiento). Si escribes otro
+  agente hermano en el mismo workspace (mismo proveedor, modo y nivel de razonamiento). Si escribes otro
   mensaje en vez de contestar, la oferta se cierra.
+- **Modelo**: la tarjeta trae «Modelo: … ▾» con los modelos del proveedor de la sesión (Opus, qwen38 local, GPT…).
+  Por defecto, el de esta sesión; si eliges otro, la sesión nueva arranca con él y su nivel de razonamiento por defecto.
 - **Lo pediste tú** (`"user_asked"`): «ábrelo en otra sesión» la abre ya.
 - **Propuesta** (`"own_initiative"`): una tarea que el agente propone por su cuenta (un seguimiento, algo que vio de
-  paso) sale como tarjeta **«Nueva tarea»** con «Empezar»; como mucho tres por turno. `dismiss_task` la retira.
+  paso) sale como tarjeta **«Nueva tarea»** con «Empezar»; como mucho tres por turno. `dismiss_task` la retira y la tarjeta pasa a «Retirada» al momento.
 - Lo rápido (una pregunta, una edición, unas pocas herramientas) se queda en la sesión.
 
 ## Cómo está hecho
@@ -19,8 +21,15 @@ las mismas reglas que Desktop ("Starting other sessions"), y la conversación mu
   MCP `rutador` (HTTP en 127.0.0.1, un URL por agente, token bearer, `alwaysLoad`) con `start_session` y
   `dismiss_task`. Las reglas de Desktop van en las `instructions` del servidor, que Claude Code mete en el prompt de
   sistema. No es una tool de plugin de Paseo porque el daemon corta esas a los 10 minutos y una oferta espera lo que
-  haga falta: la respuesta de `tools/call` es un stream SSE con keepalive. Textos en `server/textos.ts`; la máquina de
-  estados de ofertas y propuestas, sin I/O, en `server/sesiones.ts` (con su test).
+  haga falta: la respuesta de `tools/call` es un stream SSE que manda `notifications/progress` cada 15 s (Claude Code
+  corta una herramienta que pasa 300 s sin respuesta ni progreso). Puerto y token se guardan en
+  `$PASEO_HOME/rutador-mcp.json` y se reutilizan al recargar el plugin, así que las sesiones abiertas no se quedan sin
+  las tools. Textos en `server/textos.ts`; la máquina de
+  estados de ofertas y propuestas, sin I/O, en `server/sesiones.ts` (con su test). Cómo acabó cada propuesta
+  (empezada o retirada) se guarda en `$PASEO_HOME/rutador-tareas.json` (`server/registro.ts`), para que tras un
+  reinicio del daemon una tarjeta retirada o ya empezada no arranque nada. Las tools del plugin no piden permiso en
+  ningún modo (en «Always ask» salían la tarjeta y el permiso a la vez): el servidor las aprueba en
+  `agent.permission_requested`, como Desktop.
 - **Cliente**: un transformer convierte la llamada `mcp__rutador__start_session` en la tarjeta (`client/tarjeta.tsx`);
   los botones van por RPC al servidor (`shared/contract.ts`). `paseo-plan` deja pasar las llamadas `mcp__rutador__*`
   (su transformer se queda con todos los demás tool calls).

@@ -17,17 +17,20 @@ export const cardSchema = z.object({
 });
 export type CardData = z.output<typeof cardSchema>;
 
+/** A model id picked on a card for the new session; absent = the one this session runs. */
+const model = z.string().min(1).max(200).optional();
+
 /** The user's click on an offer card: answers the offer the agent's tool call is waiting on. */
 export const responder = defineRpc({
   name: "rutador.responder",
-  input: z.object({ agentId: z.string().min(1), choice: z.enum(["new", "here"]) }).strict(),
+  input: z.object({ agentId: z.string().min(1), choice: z.enum(["new", "here"]), model }).strict(),
   output: z.object({ ok: z.boolean() }),
 });
 
 /** The user's click on an own-initiative card: starts its session from the brief the agent wrote. */
 export const empezar = defineRpc({
   name: "rutador.empezar",
-  input: z.object({ agentId: z.string().min(1), taskId: z.string().min(1), title: z.string(), prompt: z.string() }).strict(),
+  input: z.object({ agentId: z.string().min(1), taskId: z.string().min(1), title: z.string(), prompt: z.string(), model }).strict(),
   output: z.object({ ok: z.boolean(), error: z.string().optional() }),
 });
 
@@ -36,4 +39,11 @@ export const estado = defineRpc({
   name: "rutador.estado",
   input: z.object({ agentId: z.string().min(1) }).strict(),
   output: z.object({ tasks: z.record(z.string(), z.string()) }),
+});
+
+/** The models a card offers for the new session: the session's provider's, and the one the session runs now. */
+export const modelos = defineRpc({
+  name: "rutador.modelos",
+  input: z.object({ agentId: z.string().min(1) }).strict(),
+  output: z.object({ current: z.string().nullable(), models: z.array(z.object({ id: z.string(), label: z.string() })) }),
 });
