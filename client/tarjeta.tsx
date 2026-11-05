@@ -1,36 +1,17 @@
 import type { PluginClientContext, PluginTimelineItemProps } from "@getpaseo/plugin/client";
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { type ComponentType, useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { CARD_KIND, cardSchema, empezar, estado, modelos, responder, TOOL_PREFIX, type CardData } from "../shared/contract.ts";
+import { estadoFinal, finalDe, marcarFinal, ponerPendiente, quitarPendiente, str, suscribirPendientes, textOf, type ToolCallLike } from "./pendientes.ts";
 
 // The tool calls become cards in the conversation, like Claude Desktop's: an offer asks «Nueva sesión» / «Hazlo aquí» while
 // the agent waits; an own-initiative proposal is a «Nueva tarea» card the user starts with a click; a session started on the
 // user's word is one line. dismiss_task leaves no row (its card says «Retirada»).
+//
+// makeCard is shared with the composer pill (client/pildora.tsx), which draws the same Card for what the timeline left
+// pending; how each card ended lives in client/pendientes.ts, so a card and the pill always show the same state.
 
-/** The text of an MCP tool result as Paseo hands it over: a string, `{ output: "…" }` (what the Claude provider sends,
- * measured), a content array, or `{ content: [...] }`. */
-function textOf(output: unknown): string {
-  if (typeof output === "string") return output;
-  if (typeof (output as { output?: unknown })?.output === "string") return (output as { output: string }).output;
-  const parts = Array.isArray(output) ? output : Array.isArray((output as { content?: unknown })?.content) ? (output as { content: unknown[] }).content : [];
-  const text = parts.map((p) => (typeof (p as { text?: unknown })?.text === "string" ? (p as { text: string }).text : "")).join("");
-  return text || (output == null ? "" : JSON.stringify(output));
-}
-
-const str = (v: unknown) => (typeof v === "string" ? v : "");
-
-// How each proposal ended, as the timeline tells it: a later dismiss_task, or start_session with its proposal_id. The
-// transformer sees those items, the card does not, so they meet here and the card changes the moment the call lands.
-const finals = new Map<string, "dismissed" | "started">();
-const listeners = new Set<() => void>();
-function markFinal(taskId: string, final: "dismissed" | "started") {
-  if (finals.get(taskId) === final) return;
-  finals.set(taskId, final);
-  queueMicrotask(() => listeners.forEach((l) => l())); // transformers run while the timeline renders: no setState there
-}
-const subscribeFinals = (l: () => void) => (listeners.add(l), () => void listeners.delete(l));
-
-function cardFrom(item: { name: string; status: string; detail: unknown }): CardData | null {
+function cardFrom(item: ToolCallLike & { name: string; status: string }): CardData | null {
   const detail = (item.detail ?? {}) as { type?: string; input?: unknown; output?: unknown };
   const input = (detail.input ?? {}) as Record<string, unknown>;
   const output = textOf(detail.output);
@@ -62,9 +43,11 @@ function outcome(d: CardData): string {
 
 type Models = { current: string | null; models: { id: string; label: string }[] };
 
-export function addSessionCards(client: PluginClientContext): () => void {
-  const modelsOf = new Map<string, Promise<Models>>(); // one fetch per agent, shared by its cards
+const modelsOf = new Map<string, Promise<Models>>(); // one fetch per agent, shared by its cards and by the pill's cards
 
+/** The card and its actions, on this client's RPCs. `Card` also registers itself in the pill's store when it is a pending
+ * proposal or an open offer, so the pill lights up for what the user is looking at even on an agent never scanned. */
+export function makeCard(client: PluginClientContext): ComponentType<PluginTimelineItemProps<CardData>> {
   /** «Modelo: Opus 5.5 ▾» and, open, the list of the session's provider's models. `value` null = the session's own. */
   function ModelPicker({ agentId, value, onChange, disabled, c }: { agentId: string; value: string | null; onChange: (id: string) => void; disabled: boolean; c: PluginTimelineItemProps["theme"]["colors"] }) {
     const [data, setData] = useState<Models | null>(null);
@@ -118,7 +101,7 @@ export function addSessionCards(client: PluginClientContext): () => void {
     const [sent, setSent] = useState<string | null>(null);
     const [fetched, setState] = useState<string | null>(null);
     const [model, setModel] = useState<string | null>(null);
-    const final = useSyncExternalStore(subscribeFinals, () => (d.taskId ? finals.get(d.taskId) : undefined));
+    const final = useSyncExternalStore(suscribirPendientes, () => (d.taskId ? estadoFinal(d.taskId) : undefined));
     const state = final ?? fetched;
 
     const refresh = useCallback(() => {
@@ -126,6 +109,12 @@ export function addSessionCards(client: PluginClientContext): () => void {
       void client.rpc(estado, { agentId }).then((s) => setState(s.tasks[d.taskId!] ?? null), () => {});
     }, [agentId, d.initiation, d.taskId]);
     useEffect(refresh, [refresh]);
+
+    // The pill shows what the timeline left pending; a mounted card is proof of pending for this agent.
+    useEffect(() => {
+      if (d.initiation === "own_initiative" && d.status === "completed" && d.taskId) ponerPendiente(agentId, { taskId: d.taskId, title: d.title, prompt: d.prompt, kind: "propuesta" });
+      else if (d.initiation === "offer" && d.status === "running") ponerPendiente(agentId, { taskId: "", title: d.title, prompt: "", kind: "oferta" });
+    }, [agentId, d]);
 
     const button = (label: string, onPress: () => void, primary = false) => (
       <Pressable
@@ -148,7 +137,13 @@ export function addSessionCards(client: PluginClientContext): () => void {
     );
     const answer = (choice: "new" | "here") => {
       setSent(choice);
-      void client.rpc(responder, { agentId, choice, ...(choice === "new" && model ? { model } : {}) }).then((r) => !r.ok && setSent(null), () => setSent(null));
+      void client.rpc(responder, { agentId, choice, ...(choice === "new" && model ? { model } : {}) }).then(
+        (r) => {
+          if (!r.ok) setSent(null);
+          else quitarPendiente(agentId, ""); // answered: nothing to answer in the pill either
+        },
+        () => setSent(null),
+      );
     };
     const start = () => {
       if (!d.taskId) return;
@@ -156,6 +151,7 @@ export function addSessionCards(client: PluginClientContext): () => void {
       void client.rpc(empezar, { agentId, taskId: d.taskId, title: d.title, prompt: d.prompt, ...(model ? { model } : {}) }).then(
         (r) => {
           if (!r.ok) setSent(null);
+          else marcarFinal(d.taskId!, "started"); // the card and the pill end together, without waiting for `estado`
           refresh();
         },
         () => setSent(null),
@@ -211,20 +207,22 @@ export function addSessionCards(client: PluginClientContext): () => void {
     );
   }
 
+  return Card;
+}
+
+export function addSessionCards(client: PluginClientContext): () => void {
+  const Card = makeCard(client);
   const offRenderer = client.addTimelineRenderer({ kind: CARD_KIND, version: 1, schema: cardSchema, Component: Card });
   const offTransformer = client.addTimelineTransformer({
     id: "rutador-cards",
     query: { itemType: "tool_call" },
     transform: ({ item }) => {
       if (!item.name.startsWith(TOOL_PREFIX)) return undefined;
-      if (item.name === `${TOOL_PREFIX}dismiss_task`) {
-        const detail = (item.detail ?? {}) as { input?: { task_id?: unknown }; output?: unknown };
-        if (typeof detail.input?.task_id === "string" && /^Withdrew the proposal/.test(textOf(detail.output))) markFinal(detail.input.task_id, "dismissed");
-        return { items: [] };
-      }
+      const f = finalDe(item);
+      if (f) marcarFinal(f.taskId, f.final); // the transformer sees the dismiss and the proposal_id start; the card does not
+      if (item.name === `${TOOL_PREFIX}dismiss_task`) return { items: [] };
       if (item.name !== `${TOOL_PREFIX}start_session`) return undefined;
       const data = cardFrom(item);
-      if (data?.initiation === "brief" && data.taskId && /^Started the proposal/.test(data.result)) markFinal(data.taskId, "started");
       return data ? { items: [{ type: "plugin", kind: CARD_KIND, version: 1, data }] } : undefined;
     },
   });

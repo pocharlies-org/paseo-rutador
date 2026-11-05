@@ -33,6 +33,13 @@ las mismas reglas que Desktop ("Starting other sessions"), y la conversación mu
 - **Cliente**: un transformer convierte la llamada `mcp__rutador__start_session` en la tarjeta (`client/tarjeta.tsx`);
   los botones van por RPC al servidor (`shared/contract.ts`). `paseo-plan` deja pasar las llamadas `mcp__rutador__*`
   (su transformer se queda con todos los demás tool calls).
+- **Píldora del composer** (`client/pildora.tsx`, `client/pendientes.ts`): bajo el chat, una píldora por agente con lo
+  pendiente —propuestas sin empezar y ofertas sin responder— en un popover que reutiliza la tarjeta y sus acciones. Al
+  abrir el cliente se rehidrata con la API tipada (`agents.list` suscrito + `timeline.refetch` + RPC `estado`), no solo
+  como side effect del transformer: si las filas no están montadas, el transformer no corre. El historial es el registro
+  de las propuestas anteriores a un reinicio (lo arrancable lo decide el servidor con `server/registro.ts`, así que no se
+  duplican acciones); una rehidratación vieja no pisa un cambio en vivo, y al acabar el turno de un agente que usa el
+  rutador la píldora se refresca.
 - Al habilitar o recargar el plugin, cada sesión parada recarga su proceso antes de su siguiente mensaje y entonces
   recibe el servidor; las que están trabajando siguen como estaban hasta terminar.
 
