@@ -71,7 +71,8 @@ export type Escaneo = {
 
 /** De las llamadas a herramientas de un timeline (de las viejas a las nuevas) y de `estado`: qué está pendiente y cómo acabó
  * cada propuesta. Una propuesta está pendiente salvo que el historial o el servidor diga que empezó o se retiró; una oferta
- * solo mientras el servidor espera la respuesta (`asking`): tras un reinicio ya no es contestable. */
+ * solo mientras el servidor espera la respuesta (`asking`): tras un reinicio la píldora no la lleva, y la contesta la
+ * tarjeta del timeline, que le manda la elección al agente como mensaje. */
 export function pendientesDesdeTimeline(items: ToolCallLike[], states: Record<string, string>): Escaneo {
   const finales = new Map<string, Final>();
   const propuestas = new Map<string, Pendiente>();

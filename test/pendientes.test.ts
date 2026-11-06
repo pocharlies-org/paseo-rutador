@@ -38,7 +38,7 @@ test("a proposed card is pending until the history or the server ends it", () =>
 test("an offer is pending only while the server waits for the answer", () => {
   const oferta = start({ initiation: "offer", title: "Revisar el PR" }, "", "running");
   assert.deepEqual(pendientesDesdeTimeline([oferta], { t1: "asking" }).pendientes, [{ taskId: "", title: "Revisar el PR", prompt: "", kind: "oferta" }]);
-  assert.deepEqual(pendientesDesdeTimeline([oferta], {}).pendientes, [], "after a restart the offer is not answerable: not pending");
+  assert.deepEqual(pendientesDesdeTimeline([oferta], {}).pendientes, [], "after a restart the pill does not carry it (the timeline card relays the answer)");
   assert.deepEqual(
     pendientesDesdeTimeline([start({ initiation: "offer", title: "Revisar el PR" }, 'The user chose "Hazlo aquí" (Do it here) (task_id: t1): do the task in this session now, as usual.')], { t1: "here" }).pendientes,
     [],
