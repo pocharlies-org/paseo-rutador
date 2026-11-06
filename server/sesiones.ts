@@ -75,6 +75,21 @@ export class Sessions {
     return choice === "here" ? this.settle(agentId, "here", { kind: "here" }) : this.settle(agentId, "awaiting_brief", { kind: "new" }, model);
   }
 
+  /** A click on an offer whose tool call is gone (Paseo restarted, or the agent's process died, while the card waited).
+   * The answer becomes a task already answered, which the agent picks up from a message: `null` when an offer with that
+   * title is still up or was answered, so a second click does nothing twice. */
+  relay(agentId: string, title: string, choice: Choice, model?: string): Task | null {
+    if (this.ofAgent(agentId).some((t) => t.kind === "offer" && t.title === title && t.state !== "closed")) return null;
+    const task: Task = { taskId: this.newId(), agentId, title, kind: "offer", state: choice === "here" ? "here" : "awaiting_brief", ...(model ? { model } : {}) };
+    this.tasks.set(task.taskId, task);
+    return task;
+  }
+
+  /** Undoes a `relay` whose message did not reach the agent, so the next click tries again. */
+  forget(taskId: string): void {
+    this.tasks.delete(taskId);
+  }
+
   /** The user sent a new message instead of answering: the offer closes and the task gets no session. */
   supersede(agentId: string): boolean {
     return this.settle(agentId, "closed", { kind: "superseded" });

@@ -123,6 +123,24 @@ export class Rutador {
     }
   }
 
+  /** A click on an offer card. When the offer is gone because Paseo restarted (`relay`), the answer reaches the agent
+   * as a message with the same text the tool call would have returned. */
+  async answer(agentId: string, choice: "new" | "here", title: string, model?: string): Promise<{ ok: boolean; relayed?: boolean }> {
+    if (this.sessions.answer(agentId, choice, model)) return { ok: true };
+    const paseo = this.paseo();
+    if (!paseo || !title) return { ok: false };
+    const task = this.sessions.relay(agentId, title, choice, model);
+    if (!task) return { ok: false };
+    try {
+      await paseo.agents.ref(agentId).send(result.relayed(choice === "here" ? result.doItHere(task.taskId) : result.writeBrief(task.taskId, title)));
+      return { ok: true, relayed: true };
+    } catch (error) {
+      this.sessions.forget(task.taskId);
+      console.error("rutador: could not relay the answer", error);
+      return { ok: false };
+    }
+  }
+
   /** Where each card of the agent stands, for the client. */
   states(agentId: string): Record<string, string> {
     const out: Record<string, string> = {};
