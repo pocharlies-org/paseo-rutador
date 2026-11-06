@@ -31,6 +31,7 @@ function cardFrom(item: ToolCallLike & { name: string; status: string }): CardDa
 
 function outcome(d: CardData): string {
   const r = d.result;
+  if (d.initiation === "offer" && /^\[Tool call interrupted/.test(r)) return "Cerrada · Paseo se reinició antes de que contestaras";
   if (d.status === "failed" || /^(title|prompt|initiation|proposal_id) .*(required|must)/.test(r)) return "No se pudo: " + r.slice(0, 160);
   if (d.status === "canceled" || /withdrawn before the user answered/.test(r)) return "Cerrada";
   if (/chose "Hazlo aquí"/.test(r)) return "Hazlo aquí · sigue en esta sesión";
@@ -101,6 +102,7 @@ export function makeCard(client: PluginClientContext): ComponentType<PluginTimel
     const [sent, setSent] = useState<string | null>(null);
     const [fetched, setState] = useState<string | null>(null);
     const [model, setModel] = useState<string | null>(null);
+    const [relayed, setRelayed] = useState(false);
     const final = useSyncExternalStore(suscribirPendientes, () => (d.taskId ? estadoFinal(d.taskId) : undefined));
     const state = final ?? fetched;
 
@@ -137,10 +139,11 @@ export function makeCard(client: PluginClientContext): ComponentType<PluginTimel
     );
     const answer = (choice: "new" | "here") => {
       setSent(choice);
-      void client.rpc(responder, { agentId, choice, ...(choice === "new" && model ? { model } : {}) }).then(
+      void client.rpc(responder, { agentId, choice, title: d.title, ...(choice === "new" && model ? { model } : {}) }).then(
         (r) => {
-          if (!r.ok) setSent(null);
-          else quitarPendiente(agentId, ""); // answered: nothing to answer in the pill either
+          if (!r.ok) return setSent(null);
+          if (r.relayed) setRelayed(true);
+          quitarPendiente(agentId, ""); // answered: nothing to answer in the pill either
         },
         () => setSent(null),
       );
@@ -169,6 +172,11 @@ export function makeCard(client: PluginClientContext): ComponentType<PluginTimel
             {button("Nueva sesión", () => answer("new"), true)}
             {button("Hazlo aquí", () => answer("here"))}
           </View>
+          {relayed ? (
+            <Text style={{ color: c.foregroundMuted, fontSize: 12, marginTop: 6 }}>
+              Paseo se reinició mientras esperaba · tu elección ({sent === "here" ? "Hazlo aquí" : "Nueva sesión"}) se envió al agente como mensaje
+            </Text>
+          ) : null}
         </>
       );
     } else if (d.initiation === "own_initiative" && d.status === "completed" && d.taskId) {

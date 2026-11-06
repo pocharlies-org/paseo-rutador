@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Rutador } from "../server/herramientas.ts";
 import { Sessions } from "../server/sesiones.ts";
 
 const ids = () => {
@@ -70,4 +74,51 @@ test("own-initiative cards: three per turn, dismissable until started", () => {
   assert.ok("task" in s.claim("a", second!.task.taskId));
   assert.equal(s.dismiss("a", second!.task.taskId), "started");
   assert.equal(s.dismiss("b", second!.task.taskId), "unknown");
+});
+
+test("after a restart a click on the card still answers: the agent gets it as a message, with the picked model", async () => {
+  const sent: { agentId: string; text: string }[] = [];
+  const created: unknown[] = [];
+  const paseo = {
+    agents: {
+      ref: (agentId: string) => ({
+        send: async (text: string) => void sent.push({ agentId, text }),
+        refresh: async () => ({ agent: { id: agentId, provider: "claude", model: "opus", workspaceId: "w" } }),
+      }),
+    },
+    workspaces: { ref: () => ({ agents: { create: async (o: unknown) => (created.push(o), { id: "child" }) } }) },
+  };
+  const r = new Rutador(() => paseo as never, join(mkdtempSync(join(tmpdir(), "rutador-")), "t.json"));
+
+  assert.deepEqual(await r.answer("a", "new", "Gemini en LiteLLM", "qwen38"), { ok: true, relayed: true });
+  assert.equal(sent.length, 1);
+  assert.match(sent[0]!.text, /Paseo se reinició/);
+  const id = /proposal_id "(task_[a-z0-9]+)"/.exec(sent[0]!.text)![1]!;
+  assert.deepEqual(await r.answer("a", "new", "Gemini en LiteLLM"), { ok: false }, "a second click sends nothing twice");
+  assert.equal(sent.length, 1);
+
+  const out = await r.startSession("a", { proposal_id: id, prompt: "brief" }, new AbortController().signal, () => () => {});
+  assert.match(out.text, /now runs in its own session/);
+  assert.equal((created[0] as { config: { provider: string } }).config.provider, "claude/qwen38", "the model picked on the card");
+
+  assert.deepEqual(await r.answer("a", "here", "Otra"), { ok: true, relayed: true });
+  assert.match(sent[1]!.text, /Hazlo aquí/);
+  assert.deepEqual(await r.answer("a", "here", ""), { ok: false }, "an old client without the title gets the old answer");
+});
+
+test("a live offer is answered as always, without a message", async () => {
+  const sent: string[] = [];
+  const paseo = { agents: { ref: () => ({ send: async (t: string) => void sent.push(t) }) } };
+  const r = new Rutador(() => paseo as never, join(mkdtempSync(join(tmpdir(), "rutador-")), "t.json"));
+  const o = r.sessions.offer("a", "X");
+  assert.ok("task" in o);
+  assert.deepEqual(await r.answer("a", "here", "X"), { ok: true });
+  assert.deepEqual(await o.outcome, { kind: "here" });
+  assert.deepEqual(sent, []);
+
+  const o2 = r.sessions.offer("a", "Y");
+  assert.ok("task" in o2);
+  r.sessions.withdraw("a"); // the agent's process died while the card waited
+  assert.deepEqual(await r.answer("a", "new", "Y"), { ok: true, relayed: true });
+  assert.equal(sent.length, 1);
 });

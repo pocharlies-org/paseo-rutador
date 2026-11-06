@@ -7,7 +7,9 @@ las mismas reglas que Desktop ("Starting other sessions"), y la conversación mu
   `start_session` con un título y nada más. Sale la tarjeta **«Nueva sesión» / «Hazlo aquí»** y la llamada espera tu
   respuesta. «Hazlo aquí»: el agente sigue en esta sesión. «Nueva sesión»: el agente escribe el brief y se abre un
   agente hermano en el mismo workspace (mismo proveedor, modo y nivel de razonamiento). Si escribes otro
-  mensaje en vez de contestar, la oferta se cierra.
+  mensaje en vez de contestar, la oferta se cierra. Si Paseo se reinicia mientras la tarjeta espera, la llamada del
+  agente se pierde, pero los botones siguen funcionando: tu elección le llega al agente como mensaje (con el modelo que
+  elegiste) y la tarjeta avisa de que Paseo se reinició.
 - **Modelo**: la tarjeta trae «Modelo: … ▾» con los modelos del proveedor de la sesión (Opus, qwen38 local, GPT…).
   Por defecto, el de esta sesión; si eliges otro, la sesión nueva arranca con él y su nivel de razonamiento por defecto.
 - **Lo pediste tú** (`"user_asked"`): «ábrelo en otra sesión» la abre ya.

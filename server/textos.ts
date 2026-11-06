@@ -72,6 +72,8 @@ export const result = {
     `The user chose "Nueva sesión" (New session) for "${title}" (task_id: ${id}). Write its brief now: call start_session once more with exactly proposal_id "${id}", prompt (the task as the user would send it to a fresh session: the files or area, what done looks like) and background (what that session needs from this conversation, a few sentences) — no other arguments and nothing else in that message. Do not do the task here. When that call returns, say in one line that it is running in its own session, then end your turn.`,
   superseded: (id: string) =>
     `The user did not answer the card: they sent a new message instead. The offer is closed (task_id: ${id}) and the task gets no session of its own, so do not offer it again. Their message may change the task or call it off, so deal with it first. If you can see it right after this result, respond to it, then do the task only if it still fits what they wrote. If you cannot see it, it is queued and reaches you only when this turn ends: do not start the task; say in one line that you will read their message first, and end your turn. When it arrives, respond to it, then do the task if it still fits.`,
+  relayed: (answer: string) =>
+    `[Paseo se reinició mientras la tarjeta esperaba y tu llamada a start_session se perdió; esta es la respuesta de la tarjeta.] ${answer}`,
   withdrawn: (id: string) => `The offer was withdrawn before the user answered (task_id: ${id}); do nothing further with it.`,
   busy: (id: string, title: string) =>
     `An offer is already up for "${title}" (task_id: ${id}) and waiting for the user; nothing new was shown. Make one offer at a time.`,

@@ -71,7 +71,10 @@ export default function contribute(server: PluginServerContext) {
     await context.paseo.agents.ref(agent.id).respondToPermission({ requestId: request.id, response: { behavior: "allow" } });
   });
 
-  server.handle(responder, ({ agentId, choice, model }) => ({ ok: rutador.sessions.answer(agentId, choice, model) }));
+  server.handle(responder, ({ agentId, choice, title, model }, context) => {
+    paseo ??= context.paseo;
+    return rutador.answer(agentId, choice, title ?? "", model);
+  });
   server.handle(empezar, async ({ agentId, taskId, title, prompt, model }, context) => {
     paseo ??= context.paseo;
     return rutador.startFromCard(agentId, taskId, title, prompt, model);
