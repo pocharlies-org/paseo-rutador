@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "description": "Plugin de Paseo: el agente ofrece sesiones nuevas como Claude Desktop (tarjeta Nueva sesión / Hazlo aquí) con su propio MCP start_session.",
+  "description": "Plugin de Paseo: el agente ofrece sesiones nuevas como Claude Desktop (tarjeta Nueva sesión / Hazlo aquí / Subagente / Workflow) con su propio MCP start_session.",
   "license": "MIT",
   "files": ["paseo-plugin.json", "README.md", "index.client.tsx", "index.server.ts", "client/", "server/", "shared/"],
   "scripts": {

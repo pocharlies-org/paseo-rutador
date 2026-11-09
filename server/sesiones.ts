@@ -1,6 +1,6 @@
 // The offers and proposals of every agent, with no I/O: the MCP tool and the card's RPCs drive it, the test covers it.
 //
-//   offer:    asking ──answer "here"──▶ here            (the tool returns "do it here")
+//   offer:    asking ──answer "here"──▶ here            (the tool returns "do it here"; "subagent" and "workflow" too, each with its own text)
 //                    ──answer "new"───▶ awaiting_brief ──brief──▶ started
 //                    ──user typed past─▶ closed          (the tool returns "they sent a new message instead")
 //                    ──call aborted───▶ closed
@@ -9,8 +9,12 @@
 //
 // One asking offer per agent: an offer is the only call of its message and blocks the turn, so a second one is a mistake.
 
-export type Choice = "new" | "here";
-export type OfferOutcome = { kind: "new" } | { kind: "here" } | { kind: "superseded" } | { kind: "withdrawn" };
+import type { Choice } from "../shared/contract.ts";
+
+export type { Choice };
+/** The choices that keep the task in this session: by itself, through a subagent or as a Workflow. */
+export type Here = Exclude<Choice, "new">;
+export type OfferOutcome = { kind: Choice } | { kind: "superseded" } | { kind: "withdrawn" };
 export type TaskState = "asking" | "awaiting_brief" | "pending" | "started" | "here" | "closed" | "dismissed";
 
 export interface Task {
@@ -72,7 +76,7 @@ export class Sessions {
   /** The user's click on the card, with the model picked for the new session. False when the agent has no offer up
    * (answered already, closed, never opened). */
   answer(agentId: string, choice: Choice, model?: string): boolean {
-    return choice === "here" ? this.settle(agentId, "here", { kind: "here" }) : this.settle(agentId, "awaiting_brief", { kind: "new" }, model);
+    return choice === "new" ? this.settle(agentId, "awaiting_brief", { kind: "new" }, model) : this.settle(agentId, "here", { kind: choice });
   }
 
   /** A click on an offer whose tool call is gone (Paseo restarted, or the agent's process died, while the card waited).
@@ -80,7 +84,7 @@ export class Sessions {
    * title is still up or was answered, so a second click does nothing twice. */
   relay(agentId: string, title: string, choice: Choice, model?: string): Task | null {
     if (this.ofAgent(agentId).some((t) => t.kind === "offer" && t.title === title && t.state !== "closed")) return null;
-    const task: Task = { taskId: this.newId(), agentId, title, kind: "offer", state: choice === "here" ? "here" : "awaiting_brief", ...(model ? { model } : {}) };
+    const task: Task = { taskId: this.newId(), agentId, title, kind: "offer", state: choice === "new" ? "awaiting_brief" : "here", ...(model ? { model } : {}) };
     this.tasks.set(task.taskId, task);
     return task;
   }

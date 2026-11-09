@@ -1,10 +1,10 @@
 import type { PluginClientContext, PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { type ComponentType, useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { CARD_KIND, cardSchema, empezar, estado, modelos, responder, TOOL_PREFIX, type CardData } from "../shared/contract.ts";
+import { CARD_KIND, cardSchema, empezar, estado, modelos, responder, TOOL_PREFIX, type CardData, type Choice } from "../shared/contract.ts";
 import { estadoFinal, finalDe, marcarFinal, ponerPendiente, quitarPendiente, str, suscribirPendientes, textOf, type ToolCallLike } from "./pendientes.ts";
 
-// The tool calls become cards in the conversation, like Claude Desktop's: an offer asks «Nueva sesión» / «Hazlo aquí» while
+// The tool calls become cards in the conversation, like Claude Desktop's: an offer asks «Nueva sesión» / «Hazlo aquí» / «Subagente» / «Workflow» while
 // the agent waits; an own-initiative proposal is a «Nueva tarea» card the user starts with a click; a session started on the
 // user's word is one line. dismiss_task leaves no row (its card says «Retirada»).
 //
@@ -35,12 +35,16 @@ function outcome(d: CardData): string {
   if (d.status === "failed" || /^(title|prompt|initiation|proposal_id) .*(required|must)/.test(r)) return "No se pudo: " + r.slice(0, 160);
   if (d.status === "canceled" || /withdrawn before the user answered/.test(r)) return "Cerrada";
   if (/chose "Hazlo aquí"/.test(r)) return "Hazlo aquí · sigue en esta sesión";
+  if (/chose "Subagente"/.test(r)) return "Subagente · sigue aquí con un subagente";
+  if (/chose "Workflow"/.test(r)) return "Workflow · sigue aquí con un workflow";
   if (/sent a new message instead/.test(r)) return "Cerrada · escribiste otro mensaje";
   if (/chose "Nueva sesión".*could not be started/.test(r)) return "No se pudo abrir la sesión nueva · sigue aquí";
   if (/chose "Nueva sesión"/.test(r)) return "Nueva sesión · se abre con el brief del agente";
   if (/already up/.test(r)) return "Ya hay una oferta abierta";
   return r.slice(0, 160);
 }
+
+const LABEL: Record<Choice, string> = { new: "Nueva sesión", here: "Hazlo aquí", subagent: "Subagente", workflow: "Workflow" };
 
 type Models = { current: string | null; models: { id: string; label: string }[] };
 
@@ -137,7 +141,7 @@ export function makeCard(client: PluginClientContext): ComponentType<PluginTimel
         <Text style={{ color: primary ? c.accentForeground : c.foreground, fontSize: 13, fontWeight: "500" }}>{label}</Text>
       </Pressable>
     );
-    const answer = (choice: "new" | "here") => {
+    const answer = (choice: Choice) => {
       setSent(choice);
       void client.rpc(responder, { agentId, choice, title: d.title, ...(choice === "new" && model ? { model } : {}) }).then(
         (r) => {
@@ -169,12 +173,14 @@ export function makeCard(client: PluginClientContext): ComponentType<PluginTimel
         <>
           <ModelPicker agentId={agentId} value={model} onChange={setModel} disabled={sent !== null} c={c} />
           <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-            {button("Nueva sesión", () => answer("new"), true)}
-            {button("Hazlo aquí", () => answer("here"))}
+            {button(LABEL.new, () => answer("new"), true)}
+            {button(LABEL.here, () => answer("here"))}
+            {button(LABEL.subagent, () => answer("subagent"))}
+            {button(LABEL.workflow, () => answer("workflow"))}
           </View>
           {relayed ? (
             <Text style={{ color: c.foregroundMuted, fontSize: 12, marginTop: 6 }}>
-              Paseo se reinició mientras esperaba · tu elección ({sent === "here" ? "Hazlo aquí" : "Nueva sesión"}) se envió al agente como mensaje
+              Paseo se reinició mientras esperaba · tu elección ({LABEL[sent as Choice]}) se envió al agente como mensaje
             </Text>
           ) : null}
         </>

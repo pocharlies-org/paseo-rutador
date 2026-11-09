@@ -1,6 +1,6 @@
 {
   "id": "paseo-rutador",
   "name": "Sesiones nuevas",
-  "description": "Como Claude Desktop: el agente ofrece abrir una tarea en una sesión nueva del mismo workspace con una tarjeta «Nueva sesión» / «Hazlo aquí», y propone las siguientes tareas como tarjetas que se empiezan con un clic.",
+  "description": "Como Claude Desktop: el agente ofrece abrir una tarea en una sesión nueva del mismo workspace con una tarjeta «Nueva sesión» / «Hazlo aquí» / «Subagente» / «Workflow», y propone las siguientes tareas como tarjetas que se empiezan con un clic.",
   "requirements": { "paseo": ">=0.14.0" }
 }

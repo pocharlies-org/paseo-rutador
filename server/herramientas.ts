@@ -3,7 +3,7 @@
 import type { PaseoApi } from "@getpaseo/client";
 import type { McpToolResult } from "./mcp.ts";
 import { Registro } from "./registro.ts";
-import { Sessions, type Task } from "./sesiones.ts";
+import { type Choice, Sessions, type Task } from "./sesiones.ts";
 import { result } from "./textos.ts";
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
@@ -94,10 +94,10 @@ export class Rutador {
         const stopWatching = onOffer(agentId); // a new user message closes the offer
         try {
           const o = await outcome;
-          if (o.kind === "here") return { text: result.doItHere(task.taskId) };
           if (o.kind === "new") return { text: result.writeBrief(task.taskId, task.title) };
           if (o.kind === "superseded") return { text: result.superseded(task.taskId) };
-          return { text: result.withdrawn(task.taskId) };
+          if (o.kind === "withdrawn") return { text: result.withdrawn(task.taskId) };
+          return { text: result.doItHere(task.taskId, o.kind) };
         } finally {
           signal.removeEventListener("abort", onAbort);
           stopWatching();
@@ -125,14 +125,14 @@ export class Rutador {
 
   /** A click on an offer card. When the offer is gone because Paseo restarted (`relay`), the answer reaches the agent
    * as a message with the same text the tool call would have returned. */
-  async answer(agentId: string, choice: "new" | "here", title: string, model?: string): Promise<{ ok: boolean; relayed?: boolean }> {
+  async answer(agentId: string, choice: Choice, title: string, model?: string): Promise<{ ok: boolean; relayed?: boolean }> {
     if (this.sessions.answer(agentId, choice, model)) return { ok: true };
     const paseo = this.paseo();
     if (!paseo || !title) return { ok: false };
     const task = this.sessions.relay(agentId, title, choice, model);
     if (!task) return { ok: false };
     try {
-      await paseo.agents.ref(agentId).send(result.relayed(choice === "here" ? result.doItHere(task.taskId) : result.writeBrief(task.taskId, title)));
+      await paseo.agents.ref(agentId).send(result.relayed(choice === "new" ? result.writeBrief(task.taskId, title) : result.doItHere(task.taskId, choice)));
       return { ok: true, relayed: true };
     } catch (error) {
       this.sessions.forget(task.taskId);

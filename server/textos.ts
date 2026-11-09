@@ -3,13 +3,14 @@
 // server ("Starting other sessions", `start_session`, `dismiss_task`), minus what Paseo has no counterpart for (cloud and
 // SSH targets, worktree choice, hand-off, wrap-up box, chapter marks, reports from the started session).
 import { SERVER } from "../shared/contract.ts";
+import type { Here } from "./sesiones.ts";
 
 const START = `mcp__${SERVER}__start_session`;
 const DISMISS = `mcp__${SERVER}__dismiss_task`;
 
 export const INSTRUCTIONS = `## Starting other sessions
 
-Work that should not happen here goes to its own session — \`${START}\`: a real Paseo session in this same workspace that the user can open, talk to and stop, shown in the sidebar. It starts from your brief alone and does not report back to you. \`initiation\` says whose task it is: "offer" is for a task the user named in their latest message — asked plainly, or as "suggest / split off / make a task (or session) for X" — and asks them, before anything starts, "Nueva sesión" (New session) or "Hazlo aquí" (Do it here); the call waits for their answer. "user_asked" starts it now because the user told you to. "own_initiative" is for work you propose yourself that the user has not told you to do — what you noticed, or the follow-up your own answer or work turned up: a card they may start (a click, or "start the second one" → \`start_session\` with just its \`proposal_id\`).
+Work that should not happen here goes to its own session — \`${START}\`: a real Paseo session in this same workspace that the user can open, talk to and stop, shown in the sidebar. It starts from your brief alone and does not report back to you. \`initiation\` says whose task it is: "offer" is for a task the user named in their latest message — asked plainly, or as "suggest / split off / make a task (or session) for X" — and asks them, before anything starts, "Nueva sesión" (New session) or "Hazlo aquí" (Do it here) — or here through a subagent ("Subagente") or a Workflow ("Workflow"); the call waits for their answer. "user_asked" starts it now because the user told you to. "own_initiative" is for work you propose yourself that the user has not told you to do — what you noticed, or the follow-up your own answer or work turned up: a card they may start (a click, or "start the second one" → \`start_session\` with just its \`proposal_id\`).
 - Quick things (a question, a read, one edit, a handful of tool calls) stay here.
 - A session is for a task of its own: it outlives this turn, a short brief is enough to start it, the user may want to open, steer or review it apart from this work, and it ends in something of its own (a branch, a PR, a change in another repository). A piece of the task at hand is not one, however large or parallel: searching or reading widely, independent parts of one change, and testing, checking, reviewing or demoing what you built run here or in a subagent, whose result comes back to you in this turn. Work a subagent would do well becomes a session only when the user asks for a session.
 - A turn whose request is a task of its own in that sense — and any turn where the user names a task and asks you to suggest, split off or make a task or session for it — does not start with the work: its first message is \`${START}\` with \`initiation\` "offer" and a \`title\` — nothing else, no prompt or background yet, so the card is up at once.
@@ -67,7 +68,12 @@ export const DISMISS_SCHEMA = {
 // ---- results
 
 export const result = {
-  doItHere: (id: string) => `The user chose "Hazlo aquí" (Do it here) (task_id: ${id}): do the task in this session now, as usual.`,
+  doItHere: (id: string, how: Here) =>
+    how === "subagent"
+      ? `The user chose "Subagente" (Do it here, through a subagent) (task_id: ${id}): do the task in this turn by handing it to one Agent tool call with the whole brief — the task, the files or area, what done looks like. Its report comes back to you: check what it claims, then relay what matters.`
+      : how === "workflow"
+        ? `The user chose "Workflow" (Do it here, as a workflow) (task_id: ${id}): do the task in this turn as a Workflow tool script — this click is the user's explicit opt-in to the Workflow tool for this task. Load the workflow-authoring skill before writing the script. If you have no Workflow tool, do it with subagents (the Agent tool) and say so in one line.`
+        : `The user chose "Hazlo aquí" (Do it here) (task_id: ${id}): do the task in this session now, as usual.`,
   writeBrief: (id: string, title: string) =>
     `The user chose "Nueva sesión" (New session) for "${title}" (task_id: ${id}). Write its brief now: call start_session once more with exactly proposal_id "${id}", prompt (the task as the user would send it to a fresh session: the files or area, what done looks like) and background (what that session needs from this conversation, a few sentences) — no other arguments and nothing else in that message. Do not do the task here. When that call returns, say in one line that it is running in its own session, then end your turn.`,
   superseded: (id: string) =>

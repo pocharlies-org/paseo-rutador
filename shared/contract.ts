@@ -20,11 +20,15 @@ export type CardData = z.output<typeof cardSchema>;
 /** A model id picked on a card for the new session; absent = the one this session runs. */
 const model = z.string().min(1).max(200).optional();
 
+/** The answers an offer card gives: a new session, or here — by itself, through a subagent or as a Workflow. */
+const CHOICES = ["new", "here", "subagent", "workflow"] as const;
+export type Choice = (typeof CHOICES)[number];
+
 /** The user's click on an offer card: answers the offer the agent's tool call is waiting on. After a restart of Paseo
  * that offer is gone, and the answer goes to the agent as a message instead (`relayed`); the title names it there. */
 export const responder = defineRpc({
   name: "rutador.responder",
-  input: z.object({ agentId: z.string().min(1), choice: z.enum(["new", "here"]), title: z.string().max(200).optional(), model }).strict(),
+  input: z.object({ agentId: z.string().min(1), choice: z.enum(CHOICES), title: z.string().max(200).optional(), model }).strict(),
   output: z.object({ ok: z.boolean(), relayed: z.boolean().optional() }),
 });
 
