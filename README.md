@@ -33,8 +33,8 @@ El fin de turno puede ser parcial: el coordinador verifica los criterios y conti
 
 El registro atómico `$PASEO_HOME/rutador-coordinaciones.json` conserva propiedad, resultados e IDs de envío. Tras recarga se reconcilia
 con el historial y el estado real al primer hook o RPC que proporciona la API de Paseo; no hay temporizador ni sondeo de modelos.
-Un envío de admisión incierta nunca se repite automáticamente. Permisos, intervención humana, cancelación o archivado pausan el enlace;
-las incidencias quedan en el historial del coordinador. No se desarchiva ni se contesta un permiso desde la coordinación.
+Un envío de admisión incierta nunca se repite automáticamente. La intervención humana, cancelación o archivado pausan el enlace;
+los permisos pendientes se notifican y bloquean la continuación hasta resolverse. No se desarchiva ni se contesta un permiso desde la coordinación.
 
 Límites deliberados: no hay coordinación anidada, no se toma control de hijos nativos, y una finalización perdida durante la desconexión
 solo se acepta si el snapshot conserva una señal nueva de finalización; si no, se conserva una incidencia para revisión, no una entrega falsa.
@@ -43,8 +43,8 @@ La espera `sesion` necesita que el contrato de cierre del host y el parser del a
 ## Cómo está hecho
 
 - **Servidor**: en `agent.session_open` (sesión creada o reanudada, solo proveedor `claude`) añade su propio servidor
-  MCP `rutador` (HTTP en 127.0.0.1, un URL por agente, token bearer, `alwaysLoad`) con `start_session` y
-  `dismiss_task`. Las reglas de Desktop van en las `instructions` del servidor, que Claude Code mete en el prompt de
+  MCP `rutador` (HTTP en 127.0.0.1, un URL por agente, token bearer, `alwaysLoad`) con `start_session`,
+  `dismiss_task` y `coordinate_session`. Las reglas de sesiones van en las `instructions` del servidor, que Claude Code mete en el prompt de
   sistema. No es una tool de plugin de Paseo porque el daemon corta esas a los 10 minutos y una oferta espera lo que
   haga falta: la respuesta de `tools/call` es un stream SSE que manda `notifications/progress` cada 15 s (Claude Code
   corta una herramienta que pasa 300 s sin respuesta ni progreso). Puerto y token se guardan en

@@ -1,5 +1,5 @@
 // What the model reads: the server's instructions (Claude Code puts them in the system prompt, on a new session and on a
-// resumed one alike), the two tool descriptions and every tool result. Adapted from Claude Desktop's own `ccd_session`
+// resumed one alike), the card-tool descriptions and results. Adapted from Claude Desktop's own `ccd_session`
 // server ("Starting other sessions", `start_session`, `dismiss_task`), minus what Paseo has no counterpart for (cloud and
 // SSH targets, worktree choice, hand-off, wrap-up box, chapter marks, reports from the started session).
 import { SERVER } from "../shared/contract.ts";
