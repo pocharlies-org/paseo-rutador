@@ -229,6 +229,27 @@ test("a missing producer after restart does not trap release or another delegati
   assert.equal(f.snapshot(), undefined);
 });
 
+test("reload before a queued prompt appears in history does not pause or re-send it", async (t) => {
+  const f = fixture(t);
+  f.finish("Previous partial");
+  await f.call("link", { objective: "Next phase" });
+  const request_id = randomUUID();
+  await f.call("continue", { prompt: "Next phase", request_id });
+  const acceptedRow = f.pages.get(producer)!.entries.pop();
+  await f.coord.close();
+  const restored = new Coordinaciones(f.home);
+  t.after(() => restored.close());
+  await restored.ready(f.api as never);
+  assert.equal(f.snapshot().state, "watching");
+  assert.equal(f.sent.length, 1);
+  f.pages.get(producer)!.entries.push(acceptedRow);
+  f.finish("Next result");
+  await restored.ended(producer, "completed", f.api as never);
+  assert.equal(f.snapshot().state, "result");
+  assert.equal(f.sent.filter((x) => x.id === producer).length, 1);
+  assert.match(f.sent[1]!.text, /Next result/);
+});
+
 test("corrupted storage and invalid tool input fail closed", async (t) => {
   const f = fixture(t);
   await assert.rejects(f.coord.tool(owner, { action: "link", agent_id: "not-an-id" }, f.api as never));

@@ -238,6 +238,8 @@ export class Coordinaciones {
       if (!d.requestId || !accepted(p, d.requestId)) { await this.pause(d, "Uncertain dispatch after restart; not sent again", true); return; }
       d.user = `paseo-agent-message:${d.requestId}`; d.state = "watching"; this.save();
     }
+    // Acknowledgement can precede the queued prompt's timeline row; only a later event proves admission.
+    if (d.requestId && d.state === "watching" && !accepted(p, d.requestId)) return;
     if (identity(p) !== d.user) {
       const u = lastInput(p);
       if (u?.type !== "user_message" || !this.systemMessage(u.text)) { await this.pause(d, "Producer received another message while the coordinator was disconnected"); return; }
