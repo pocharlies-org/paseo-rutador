@@ -78,7 +78,7 @@ export class Coordinaciones {
     if (p.error || !p.agent || p.gap || p.staleCursor) throw new Error(p.error || "Session history unavailable");
     let cursor = p.startCursor;
     let older = p.hasOlder;
-    while (!lastInput(p) && older && cursor) {
+    while ((!lastInput(p) || !p.entries.some((e) => e.item.type === "user_message" && !this.systemMessage(e.item.text) && !e.item.text.startsWith("[AUTOPILOT] "))) && older && cursor) {
       const previous = await timeline.refetch({ direction: "before", cursor, limit: 100 });
       if (previous.error || previous.gap || previous.staleCursor || previous.epoch !== p.epoch) throw new Error("Session history changed; retry the read");
       p.entries.unshift(...previous.entries);
@@ -92,9 +92,13 @@ export class Coordinaciones {
     this.api = api;
     if (!this.restoring) this.restoring = this.serial(async () => {
       for (const d of Object.values(this.data.delegations)) {
-        await this.watch(d.producerId);
-        await this.watch(d.ownerId);
-        await this.reconcile(d);
+        try {
+          await this.watch(d.producerId);
+          await this.watch(d.ownerId);
+          await this.reconcile(d);
+        } catch (error) {
+          d.state = "paused"; d.reason = `Reconciliation unavailable: ${String(error)}`; this.save();
+        }
       }
     }).catch((error) => { this.restoring = null; throw error; });
     await this.restoring;
@@ -153,7 +157,7 @@ export class Coordinaciones {
         if (owner.agent!.archivedAt || producer.agent!.archivedAt || producer.agent!.status === "closed") throw new Error("Archived or closed sessions cannot be coordinated");
         if (producer.agent!.labels["paseo.parent-agent-id"]) throw new Error("Use the native returning child; do not add a second notification channel");
         this.noAutopilot(input.agent_id);
-        d = { ownerId, producerId: input.agent_id, objective: input.objective, state: "watching", user: identity(producer), ownerActivity: owner.agent!.lastUserMessageAt, producerActivity: producer.agent!.lastUserMessageAt, requestId: null, sentIds: [], attention: producer.agent!.attentionTimestamp ?? null, result: "", reason: "", noticeId: null, notice: null };
+        d = { ownerId, producerId: input.agent_id, objective: input.objective, state: "watching", user: identity(producer), ownerActivity: this.humanActivity(owner, true), producerActivity: this.humanActivity(producer), requestId: null, sentIds: [], attention: producer.agent!.attentionTimestamp ?? null, result: "", reason: "", noticeId: null, notice: null };
         this.data.delegations[d.producerId] = d;
         this.save();
         try { this.noAutopilot(input.agent_id); }
@@ -167,7 +171,7 @@ export class Coordinaciones {
         return this.status(d);
       }
       if (!d) throw new Error("No registered delegation. Link the producer before waiting on it.");
-      if (input.action === "status") { await this.reconcile(d); return this.status(d); }
+      if (input.action === "status") return this.status(d);
       if (!input.prompt || !input.request_id) throw new Error("continue requires prompt and a stable request_id UUID; reuse that ID if the tool response was lost");
       if (d.sentIds.includes(input.request_id)) return this.status(d);
       if (d.state === "paused") throw new Error("Delegation paused by intervention, cancellation or an ambiguous send. Resolve the cause before releasing and explicitly linking again.");
@@ -175,7 +179,7 @@ export class Coordinaciones {
       if (owner.agent!.archivedAt || owner.agent!.pendingPermissions.length || producer.agent!.archivedAt || producer.agent!.pendingPermissions.length || producer.agent!.status !== "idle") throw new Error("Producer must be idle, open and without pending permissions; do not override a running turn");
       this.noAutopilot(d.producerId);
       if (identity(producer) !== d.user) { await this.pause(d, "Producer changed since delegation"); return this.status(d); }
-      if (owner.agent!.lastUserMessageAt !== d.ownerActivity || producer.agent!.lastUserMessageAt !== d.producerActivity) { await this.pause(d, "User intervened in the delegation"); return this.status(d); }
+      if (this.humanActivity(owner, true) !== d.ownerActivity || this.humanActivity(producer) !== d.producerActivity) { await this.pause(d, "User intervened in the delegation"); return this.status(d); }
       d.requestId = input.request_id;
       d.sentIds.push(input.request_id);
       d.attention = producer.agent!.attentionTimestamp ?? null;
@@ -218,12 +222,17 @@ export class Coordinaciones {
     return /^(?:\(supervisor; no es un mensaje de Dani\) )?(?:EVENTO:|RETOMA:)|^Stop hook feedback:/.test(text.trim());
   }
 
+  private humanActivity(page: Page, owner = false): string | null {
+    const item = page.entries.findLast((e) => e.item.type === "user_message" && !this.systemMessage(e.item.text) && !(owner && e.item.text.startsWith("[AUTOPILOT] ")))?.item;
+    return item?.type === "user_message" ? item.clientMessageId || item.messageId || item.text : null;
+  }
+
   private async reconcile(d: Delegation, completed = false): Promise<void> {
     const [p, owner] = await Promise.all([this.page(d.producerId), this.page(d.ownerId)]);
     if (d.state === "paused") { if (d.notice === "pending" || d.notice === "sending") await this.deliver(d); return; }
-    if (owner.agent!.archivedAt || owner.agent!.status === "closed" || owner.agent!.lastUserMessageAt !== d.ownerActivity) { await this.pause(d, "Coordinator changed, archived or closed; inspect before resuming"); return; }
+    if (owner.agent!.archivedAt || owner.agent!.status === "closed" || this.humanActivity(owner, true) !== d.ownerActivity) { await this.pause(d, "Coordinator changed, archived or closed; inspect before resuming"); return; }
     if (p.agent!.archivedAt || p.agent!.status === "closed") { await this.pause(d, "Producer archived or closed", true); return; }
-    if (p.agent!.lastUserMessageAt !== d.producerActivity) { await this.pause(d, "User intervened in the producer", true); return; }
+    if (this.humanActivity(p) !== d.producerActivity) { await this.pause(d, "User intervened in the producer", true); return; }
     if (p.agent!.pendingPermissions.length || p.agent!.status === "error") { await this.result(d, p, "Producer needs permission or reported an error; do not approve or retry around it"); return; }
     if (d.state === "dispatching") {
       if (!d.requestId || !accepted(p, d.requestId)) { await this.pause(d, "Uncertain dispatch after restart; not sent again", true); return; }
@@ -257,7 +266,7 @@ export class Coordinaciones {
   private async deliver(d: Delegation): Promise<void> {
     if (!d.noticeId || d.notice === "sent") return;
     const owner = await this.page(d.ownerId);
-    if (owner.agent!.archivedAt || owner.agent!.status === "closed" || owner.agent!.pendingPermissions.length || owner.agent!.lastUserMessageAt !== d.ownerActivity) return;
+    if (owner.agent!.archivedAt || owner.agent!.status === "closed" || owner.agent!.pendingPermissions.length || this.humanActivity(owner, true) !== d.ownerActivity) return;
     if (accepted(owner, d.noticeId)) { d.notice = "sent"; this.save(); return; }
     if (d.notice === "sending") { await this.pause(d, "Uncertain result notification; result retained, inspect status before continuing"); return; }
     d.notice = "sending"; this.save();
@@ -302,6 +311,13 @@ export class Coordinaciones {
     await this.serial(async () => {
       const d = this.data.delegations[id];
       if (d && d.state !== "paused") await this.result(d, await this.page(id), "Producer needs permission; delegation does not approve it");
+    });
+  }
+
+  async resolved(id: string, api: PaseoApi): Promise<void> {
+    await this.ready(api);
+    await this.serial(async () => {
+      for (const d of Object.values(this.data.delegations)) if (d.ownerId === id && d.notice === "pending") await this.deliver(d);
     });
   }
 

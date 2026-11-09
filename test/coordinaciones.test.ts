@@ -19,16 +19,12 @@ function fixture(t: { after(fn: () => void): void }) {
   }]));
   const sent: { id: string; text: string; options: any }[] = [];
   const appended: unknown[] = [];
-  const callbacks = new Map<string, (event: any) => void>();
   let failSend = false;
   const api = { agents: { ref: (id: string) => ({
     timeline: {
       refetch: async () => structuredClone(pages.get(id)),
       append: async (item: unknown) => { appended.push(item); return { seq: 1, epoch: "one" }; },
-      subscribe: (fn: (event: any) => void) => {
-        callbacks.set(id, fn);
-        return { ready: Promise.resolve(), release: () => callbacks.delete(id) };
-      },
+      subscribe: () => ({ ready: Promise.resolve(), release: () => {} }),
     },
     send: async (text: string, options: any) => {
       sent.push({ id, text, options });
@@ -38,7 +34,7 @@ function fixture(t: { after(fn: () => void): void }) {
     },
   }) } };
   const coord = new Coordinaciones(home);
-  const call = (action: string, extra: object = {}, caller = owner, instance = coord) => instance.tool(caller, { action, agent_id: producer, ...extra }, api as never);
+  const call = (action: string, extra: object = {}, caller = owner) => coord.tool(caller, { action, agent_id: producer, ...extra }, api as never);
   const snapshot = () => JSON.parse(readFileSync(join(home, "rutador-coordinaciones.json"), "utf8")).delegations[producer];
   const finish = (text: string) => {
     const p = pages.get(producer)!;
@@ -46,7 +42,7 @@ function fixture(t: { after(fn: () => void): void }) {
     p.agent.status = "idle"; p.agent.attentionReason = "finished"; p.agent.attentionTimestamp = randomUUID();
   };
   t.after(async () => { await coord.close(); rmSync(home, { recursive: true, force: true }); });
-  return { home, pages, sent, appended, callbacks, api, coord, call, snapshot, finish, fail: () => { failSend = true; } };
+  return { home, pages, sent, appended, api, coord, call, snapshot, finish, fail: () => { failSend = true; } };
 }
 
 test("a partial result wakes its coordinator; continuing and accepting does not activate worker autopilot", async (t) => {
@@ -119,10 +115,23 @@ test("human messages on either participant suspend automation, including after r
   const f = fixture(t);
   await f.call("link", { objective: "Report" });
   f.pages.get(owner)!.agent.lastUserMessageAt = "2026-01-01T01:00:00Z";
+  f.pages.get(owner)!.entries.push(row("user_message", "Stop this delegation"));
   f.finish("Result");
   await f.coord.ended(producer, "completed", f.api as never);
   assert.equal(f.sent.length, 0);
   assert.equal(f.snapshot().state, "paused");
+});
+
+test("supervisor and autopilot messages do not impersonate human intervention", async (t) => {
+  const f = fixture(t);
+  await f.call("link", { objective: "Report" });
+  f.pages.get(owner)!.agent.lastUserMessageAt = "2026-01-01T01:00:00Z";
+  f.pages.get(owner)!.entries.push(row("user_message", "[AUTOPILOT] Complete the current task"));
+  f.pages.get(owner)!.entries.push(row("user_message", "(supervisor; no es un mensaje de Dani) EVENTO: ci example/repo#1 → verde"));
+  f.finish("Final report");
+  await f.coord.ended(producer, "completed", f.api as never);
+  assert.equal(f.snapshot().state, "result");
+  assert.equal(f.sent.length, 1);
 });
 
 test("a result completed during plugin downtime is recovered once without re-running the worker", async (t) => {
@@ -192,6 +201,32 @@ test("an already idle producer is inspectable and explicitly continuable", async
   await f.call("continue", { prompt: "Finish it", request_id: randomUUID() });
   assert.equal(f.sent.length, 1);
   assert.equal(f.sent[0]!.id, producer);
+});
+
+test("a retained result is delivered after the coordinator resolves its permission", async (t) => {
+  const f = fixture(t);
+  await f.call("link", { objective: "Report" });
+  f.pages.get(owner)!.agent.pendingPermissions.push({ id: "approval" });
+  f.finish("Finished during approval");
+  await f.coord.ended(producer, "completed", f.api as never);
+  assert.equal(f.sent.length, 0);
+  f.pages.get(owner)!.agent.pendingPermissions = [];
+  await f.coord.resolved(owner, f.api as never);
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0]!.text, /Finished during approval/);
+});
+
+test("a missing producer after restart does not trap release or another delegation", async (t) => {
+  const f = fixture(t);
+  await f.call("link", { objective: "Report" });
+  await f.coord.close();
+  f.pages.delete(producer);
+  const restored = new Coordinaciones(f.home);
+  t.after(() => restored.close());
+  await restored.ready(f.api as never);
+  assert.equal(f.snapshot().state, "paused");
+  await restored.tool(owner, { action: "release", agent_id: producer }, f.api as never);
+  assert.equal(f.snapshot(), undefined);
 });
 
 test("corrupted storage and invalid tool input fail closed", async (t) => {

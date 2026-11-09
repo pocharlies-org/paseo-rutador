@@ -78,6 +78,7 @@ export default function contribute(server: PluginServerContext) {
   server.on("agent.turn_ended", ({ agent, outcome }, context) => {
     background(coordinaciones.ended(agent.id, outcome.kind, context.paseo));
   });
+  server.on("agent.permission_resolved", ({ agent }, context) => background(coordinaciones.resolved(agent.id, context.paseo)));
   server.on("agent.archived", ({ agent }, context) => background(coordinaciones.closed(agent.id, context.paseo)));
   server.on("agent.closed", ({ agent }, context) => background(coordinaciones.closed(agent.id, context.paseo)));
 
