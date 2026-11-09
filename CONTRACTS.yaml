@@ -16,4 +16,5 @@ contracts:
       user identity, ownerActivity and producerActivity human-input identities, requestId, sentIds, attention timestamp,
       result, reason, noticeId and notice pending|sending|sent|null. Any entry reserves ownership until release.
       Writer: paseo-rutador only. Consumer: paseo-sugiere refuses autopilot activation or sends for a reserved
-      producer. Corrupt data fails closed. No consumer may modify the writer's store.
+      producer. Corrupt data fails closed. No consumer may modify the writer's store. A watching entry with a
+      requestId not yet visible in the daemon timeline remains pending after reload and is never re-dispatched.
