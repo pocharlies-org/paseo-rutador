@@ -76,6 +76,7 @@ export default function contribute(server: PluginServerContext) {
     background(coordinaciones.ready(context.paseo));
   });
   server.on("agent.turn_ended", ({ agent, outcome }, context) => {
+    paseo ??= context.paseo;
     background(coordinaciones.ended(agent.id, outcome.kind, context.paseo));
   });
   server.on("agent.permission_resolved", ({ agent }, context) => background(coordinaciones.resolved(agent.id, context.paseo)));
@@ -99,7 +100,11 @@ export default function contribute(server: PluginServerContext) {
     paseo ??= context.paseo;
     return rutador.startFromCard(agentId, taskId, title, prompt, model);
   });
-  server.handle(estado, ({ agentId }) => ({ tasks: rutador.states(agentId) }));
+  server.handle(estado, ({ agentId }, context) => {
+    paseo ??= context.paseo;
+    background(coordinaciones.ready(context.paseo));
+    return { tasks: rutador.states(agentId) };
+  });
   server.handle(modelos, async ({ agentId }, context) => {
     paseo ??= context.paseo;
     return rutador.models(agentId);
