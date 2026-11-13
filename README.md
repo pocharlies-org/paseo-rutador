@@ -10,12 +10,20 @@ las mismas reglas que Desktop ("Starting other sessions"), y la conversación mu
   mensaje en vez de contestar, la oferta se cierra. Si Paseo se reinicia mientras la tarjeta espera, la llamada del
   agente se pierde, pero los botones siguen funcionando: tu elección le llega al agente como mensaje (con el modelo que
   elegiste) y la tarjeta avisa de que Paseo se reinició.
+
+  ![Oferta: tarjeta «Nueva sesión» / «Hazlo aquí» esperando la respuesta](docs/media/1-oferta.png)
+
+  Estado enviado: al pulsar una opción, la tarjeta desactiva las dos hasta que el agente responde.
+
+  ![Estado enviado: «Hazlo aquí» pulsado, botones desactivados](docs/media/3-hazlo-aqui.png)
 - **Modelo**: la tarjeta trae un chip con el modelo («Opus 5.5 ⌄») que despliega los del proveedor de la sesión (Opus,
   qwen38 local, GPT…). Por defecto, el de esta sesión; si eliges otro, la sesión nueva arranca con él y su nivel de
   razonamiento por defecto.
 - **Lo pediste tú** (`"user_asked"`): «ábrelo en otra sesión» la abre ya.
 - **Propuesta** (`"own_initiative"`): una tarea que el agente propone por su cuenta (un seguimiento, algo que vio de
   paso) sale como tarjeta **«Nueva tarea»** con «Empezar»; como mucho tres por turno. `dismiss_task` la retira y la tarjeta pasa a «Retirada» al momento.
+
+  ![Propuesta: tarjeta «Nueva tarea» con el brief y «Empezar»](docs/media/2-nueva-sesion.png)
 - Lo rápido (una pregunta, una edición, unas pocas herramientas) se queda en la sesión.
 - **Trabajo del que depende el encargo actual**: se hace aquí, con un subagente que devuelve su informe o con un hijo de Paseo (`create_agent`, `notifyOnFinish: true`). `start_session` sigue siendo para trabajos independientes, no para piezas que el coordinador necesita integrar. Una sesión productora existente se continúa, no se duplica: el fin de su turno puede ser un resultado parcial, no una entrega verificada.
 
