@@ -10,8 +10,9 @@ las mismas reglas que Desktop ("Starting other sessions"), y la conversación mu
   mensaje en vez de contestar, la oferta se cierra. Si Paseo se reinicia mientras la tarjeta espera, la llamada del
   agente se pierde, pero los botones siguen funcionando: tu elección le llega al agente como mensaje (con el modelo que
   elegiste) y la tarjeta avisa de que Paseo se reinició.
-- **Modelo**: la tarjeta trae «Modelo: … ▾» con los modelos del proveedor de la sesión (Opus, qwen38 local, GPT…).
-  Por defecto, el de esta sesión; si eliges otro, la sesión nueva arranca con él y su nivel de razonamiento por defecto.
+- **Modelo**: la tarjeta trae un chip con el modelo («Opus 5.5 ⌄») que despliega los del proveedor de la sesión (Opus,
+  qwen38 local, GPT…). Por defecto, el de esta sesión; si eliges otro, la sesión nueva arranca con él y su nivel de
+  razonamiento por defecto.
 - **Lo pediste tú** (`"user_asked"`): «ábrelo en otra sesión» la abre ya.
 - **Propuesta** (`"own_initiative"`): una tarea que el agente propone por su cuenta (un seguimiento, algo que vio de
   paso) sale como tarjeta **«Nueva tarea»** con «Empezar»; como mucho tres por turno. `dismiss_task` la retira y la tarjeta pasa a «Retirada» al momento.
@@ -55,16 +56,13 @@ La espera `sesion` necesita que el contrato de cierre del host y el parser del a
   reinicio del daemon una tarjeta retirada o ya empezada no arranque nada. Solo las dos tools de tarjetas (`start_session`
   y `dismiss_task`) se aprueban en `agent.permission_requested`, porque la tarjeta ya es la pregunta. Otras operaciones
   no heredan esa aprobación por compartir el prefijo del plugin.
-- **Cliente**: un transformer convierte la llamada `mcp__rutador__start_session` en la tarjeta (`client/tarjeta.tsx`);
-  los botones van por RPC al servidor (`shared/contract.ts`). `paseo-plan` deja pasar las llamadas `mcp__rutador__*`
-  (su transformer se queda con todos los demás tool calls).
-- **Píldora del composer** (`client/pildora.tsx`, `client/pendientes.ts`): bajo el chat, una píldora por agente con lo
-  pendiente —propuestas sin empezar y ofertas sin responder— en un popover que reutiliza la tarjeta y sus acciones. Al
-  abrir el cliente se rehidrata con la API tipada (`agents.list` suscrito + `timeline.refetch` + RPC `estado`), no solo
-  como side effect del transformer: si las filas no están montadas, el transformer no corre. El historial es el registro
-  de las propuestas anteriores a un reinicio (lo arrancable lo decide el servidor con `server/registro.ts`, así que no se
-  duplican acciones); una rehidratación vieja no pisa un cambio en vivo, y al acabar el turno de un agente que usa el
-  rutador la píldora se refresca.
+- **Cliente**: un transformer convierte la llamada `mcp__rutador__start_session` en la tarjeta (`client/tarjeta.tsx`),
+  con el aspecto de las de Claude Desktop: superficie con borde fino, icono, título y subtítulo, las acciones abajo a la
+  derecha (primaria rellena, secundaria quieta) y una entrada con fundido; solo colores del tema, así que vale en claro y
+  en oscuro. Una tarjeta que ya no pide nada se queda en su título y una línea con cómo acabó. Los botones van por RPC
+  al servidor (`shared/contract.ts`). Cómo acabó cada propuesta lo anota el transformer en `client/pendientes.ts` al ver
+  el `dismiss_task` o el `start_session` con `proposal_id`; lo que no vio (un reinicio) lo trae la tarjeta con el RPC
+  `estado`. `paseo-plan` deja pasar las llamadas `mcp__rutador__*` (su transformer se queda con todos los demás tool calls).
 - Al habilitar o recargar el plugin, cada sesión parada recarga su proceso antes de su siguiente mensaje y entonces
   recibe el servidor; las que están trabajando siguen como estaban hasta terminar.
 
