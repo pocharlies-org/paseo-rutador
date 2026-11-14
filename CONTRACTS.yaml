@@ -1,0 +1,20 @@
+version: 1
+canonical_checkout: ~/src/paseo-rutador
+registry_files:
+  - CONTRACTS.yaml
+contracts:
+  - id: file.paseo.delegations.v1
+    kind: file-schema
+    value: rutador-coordinaciones.json
+    role: provider
+    files:
+      - server/coordinaciones.ts
+    status: active
+    note: >-
+      Home-volume store under PASEO_HOME (default ~/.paseo). Schema {version:1, delegations:{producerId:entry}}.
+      Each entry has ownerId and producerId UUIDs, objective, state watching|result|dispatching|paused,
+      user identity, ownerActivity and producerActivity human-input identities, requestId, sentIds, attention timestamp,
+      result, reason, noticeId and notice pending|sending|sent|null. Any entry reserves ownership until release.
+      Writer: paseo-rutador only. Consumer: paseo-sugiere refuses autopilot activation or sends for a reserved
+      producer. Corrupt data fails closed. No consumer may modify the writer's store. A watching entry with a
+      requestId not yet visible in the daemon timeline remains pending after reload and is never re-dispatched.
