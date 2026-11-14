@@ -22,6 +22,20 @@ test("an offer waits for the click: «Hazlo aquí» ends it here", async () => {
   assert.deepEqual(s.claim("a", o.task.taskId), { refused: "here" }, "and starts no session");
 });
 
+test("«Subagente» and «Workflow» keep the task here, each with its own instruction, live and relayed", async () => {
+  const sent: string[] = [];
+  const paseo = { agents: { ref: () => ({ send: async (t: string) => void sent.push(t) }) } };
+  const r = new Rutador(() => paseo as never, join(mkdtempSync(join(tmpdir(), "rutador-")), "t.json"));
+  const call = r.startSession("a", { initiation: "offer", title: "X" }, new AbortController().signal, () => () => {});
+  assert.deepEqual(await r.answer("a", "subagent", "X"), { ok: true });
+  const out = await call;
+  assert.match(out.text, /chose "Subagente".*one Agent tool call/);
+  assert.equal(r.sessions.ofAgent("a")[0]!.state, "here", "and starts no session");
+
+  assert.deepEqual(await r.answer("a", "workflow", "Y"), { ok: true, relayed: true });
+  assert.match(sent[0]!, /Paseo se reinició.*chose "Workflow".*explicit opt-in to the Workflow tool/);
+});
+
 test("«Nueva sesión» waits for the brief, which starts it once", async () => {
   const s = new Sessions(ids());
   const o = s.offer("a", "Revisar X");

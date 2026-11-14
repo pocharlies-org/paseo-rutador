@@ -4,8 +4,10 @@ Plugin de Paseo que ofrece sesiones nuevas igual que Claude Desktop. Es el agent
 las mismas reglas que Desktop ("Starting other sessions"), y la conversación muestra una tarjeta.
 
 - **Oferta** (`initiation: "offer"`): cuando le pides una tarea propia, el primer mensaje del agente es
-  `start_session` con un título y nada más. Sale la tarjeta **«Nueva sesión» / «Hazlo aquí»** y la llamada espera tu
-  respuesta. «Hazlo aquí»: el agente sigue en esta sesión. «Nueva sesión»: el agente escribe el brief y se abre un
+  `start_session` con un título y nada más. Sale la tarjeta **«Nueva sesión» / «Hazlo aquí» / «Subagente» / «Workflow»** y la
+  llamada espera tu respuesta. «Hazlo aquí»: el agente sigue en esta sesión. «Subagente»: sigue aquí, pero delega la
+  tarea en un subagente (`Agent`) cuyo informe le vuelve. «Workflow»: sigue aquí y la orquesta con la tool `Workflow`
+  de Claude CLI (el clic es el permiso explícito que esa tool pide; sin ella, cae a subagentes). «Nueva sesión»: el agente escribe el brief y se abre un
   agente hermano en el mismo workspace (mismo proveedor, modo y nivel de razonamiento). Si escribes otro
   mensaje en vez de contestar, la oferta se cierra. Si Paseo se reinicia mientras la tarjeta espera, la llamada del
   agente se pierde, pero los botones siguen funcionando: tu elección le llega al agente como mensaje (con el modelo que

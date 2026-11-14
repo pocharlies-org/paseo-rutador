@@ -3,13 +3,14 @@
 // server ("Starting other sessions", `start_session`, `dismiss_task`), minus what Paseo has no counterpart for (cloud and
 // SSH targets, worktree choice, hand-off, wrap-up box, chapter marks, reports from the started session).
 import { SERVER } from "../shared/contract.ts";
+import type { Here } from "./sesiones.ts";
 
 const START = `mcp__${SERVER}__start_session`;
 const DISMISS = `mcp__${SERVER}__dismiss_task`;
 
 export const INSTRUCTIONS = `## Starting other sessions
 
-Work that should not happen here goes to its own session — \`${START}\`: a real Paseo session in this same workspace that the user can open, talk to and stop, shown in the sidebar. It starts from your brief alone and does not report back to you. \`initiation\` says whose task it is: "offer" is for a task the user named in their latest message — asked plainly, or as "suggest / split off / make a task (or session) for X" — and asks them, before anything starts, "Nueva sesión" (New session) or "Hazlo aquí" (Do it here); the call waits for their answer. "user_asked" starts it now because the user told you to. "own_initiative" is for work you propose yourself that the user has not told you to do — what you noticed, or the follow-up your own answer or work turned up: a card they may start (a click, or "start the second one" → \`start_session\` with just its \`proposal_id\`).
+Work that should not happen here goes to its own session — \`${START}\`: a real Paseo session in this same workspace that the user can open, talk to and stop, shown in the sidebar. It starts from your brief alone and does not report back to you. \`initiation\` says whose task it is: "offer" is for a task the user named in their latest message — asked plainly, or as "suggest / split off / make a task (or session) for X" — and asks them, before anything starts, "Nueva sesión" (New session) or "Hazlo aquí" (Do it here) — or here through a subagent ("Subagente") or a Workflow ("Workflow"); the call waits for their answer. "user_asked" starts it now because the user told you to. "own_initiative" is for work you propose yourself that the user has not told you to do — what you noticed, or the follow-up your own answer or work turned up: a card they may start (a click, or "start the second one" → \`start_session\` with just its \`proposal_id\`).
 - Quick things (a question, a read, one edit, a handful of tool calls) stay here.
 - A session is for independent work: the user can open, steer or review it apart from this task. If this task needs the result, keep it here or use a native subagent whose report returns to you. For a visible Paseo worker, use \`create_agent\` with \`notifyOnFinish: true\`, not \`start_session\`; include the objective, boundaries and acceptance criteria in the brief. Size, parallelism or a different repository do not make a dependent piece independent.
 - If an independent producer session already exists, do not create a replacement or assume it has autopilot. Use \`coordinate_session\` with \`action: "link"\`, its \`agent_id\` and an \`objective\` including acceptance criteria. Only its registered coordinator continues it (\`action: "continue"\`, \`prompt\`, stable \`request_id\` UUID); reuse that ID after a lost tool response, never make up a new retry. Link sends no work by itself: inspect an already-idle producer and explicitly continue if needed. Use \`ESPERA: sesion <agent_id>\` only after the link reports watching; its result or interruption wakes you. Do not also use \`send_agent_prompt\` or \`notifyOnFinish\` on that linked producer: they bypass ownership or duplicate notifications. Native children keep their native channel. Do not poll. A finished turn is not a verified deliverable: inspect the result, continue the same worker if incomplete, and \`release\` the delegation after acceptance. Respect pending permissions, user intervention, cancellations and archived sessions; never restart around them. Never wait for your own ticket to close as a substitute for the actual external dependency.
@@ -68,7 +69,12 @@ export const DISMISS_SCHEMA = {
 // ---- results
 
 export const result = {
-  doItHere: (id: string) => `The user chose "Hazlo aquí" (Do it here) (task_id: ${id}): do the task in this session now, as usual.`,
+  doItHere: (id: string, how: Here) =>
+    how === "subagent"
+      ? `The user chose "Subagente" (Do it here, through a subagent) (task_id: ${id}): do the task in this turn by handing it to one Agent tool call with the whole brief — the task, the files or area, what done looks like. Its report comes back to you: check what it claims, then relay what matters.`
+      : how === "workflow"
+        ? `The user chose "Workflow" (Do it here, as a workflow) (task_id: ${id}): do the task in this turn as a Workflow tool script — this click is the user's explicit opt-in to the Workflow tool for this task. Load the workflow-authoring skill before writing the script. If you have no Workflow tool, do it with subagents (the Agent tool) and say so in one line.`
+        : `The user chose "Hazlo aquí" (Do it here) (task_id: ${id}): do the task in this session now, as usual.`,
   writeBrief: (id: string, title: string) =>
     `The user chose "Nueva sesión" (New session) for "${title}" (task_id: ${id}). Write its brief now: call start_session once more with exactly proposal_id "${id}", prompt (the task as the user would send it to a fresh session: the files or area, what done looks like) and background (what that session needs from this conversation, a few sentences) — no other arguments and nothing else in that message. Do not do the task here. When that call returns, say in one line that it is running in its own session, then end your turn.`,
   superseded: (id: string) =>

@@ -2,10 +2,10 @@ import type { PluginClientContext, PluginTimelineItemProps } from "@getpaseo/plu
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, Text, View, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
-import { CARD_KIND, cardSchema, empezar, estado, modelos, responder, TOOL_PREFIX, type CardData } from "../shared/contract.ts";
+import { CARD_KIND, cardSchema, empezar, estado, modelos, responder, TOOL_PREFIX, type CardData, type Choice } from "../shared/contract.ts";
 import { estadoFinal, finalDe, marcarFinal, str, suscribirFinales, textOf, type ToolCallLike } from "./pendientes.ts";
 
-// The tool calls become cards in the conversation, like Claude Desktop's: an offer asks «Nueva sesión» / «Hazlo aquí» while
+// The tool calls become cards in the conversation, like Claude Desktop's: an offer asks «Nueva sesión» / «Hazlo aquí» / «Subagente» / «Workflow» while
 // the agent waits; an own-initiative proposal is a «Nueva tarea» card the user starts with a click; a session started on the
 // user's word is one line. dismiss_task leaves no row (its card says «Retirada»).
 //
@@ -42,12 +42,16 @@ function outcome(d: CardData): string {
   if (d.status === "failed" || /^(title|prompt|initiation|proposal_id) .*(required|must)/.test(r)) return "No se pudo: " + r.slice(0, 160);
   if (d.status === "canceled" || /withdrawn before the user answered/.test(r)) return "Cerrada";
   if (/chose "Hazlo aquí"/.test(r)) return "Hazlo aquí · sigue en esta sesión";
+  if (/chose "Subagente"/.test(r)) return "Subagente · sigue aquí con un subagente";
+  if (/chose "Workflow"/.test(r)) return "Workflow · sigue aquí con un workflow";
   if (/sent a new message instead/.test(r)) return "Cerrada · escribiste otro mensaje";
   if (/chose "Nueva sesión".*could not be started/.test(r)) return "No se pudo abrir la sesión nueva · sigue aquí";
   if (/chose "Nueva sesión"/.test(r)) return "Nueva sesión · se abre con el brief del agente";
   if (/already up/.test(r)) return "Ya hay una oferta abierta";
   return r.slice(0, 160);
 }
+
+const LABEL: Record<Choice, string> = { new: "Nueva sesión", here: "Hazlo aquí", subagent: "Subagente", workflow: "Workflow" };
 
 /** La entrada de Claude Desktop: fundido de 220 ms que sube 6 px y crece desde el 98 %, una vez por montaje. En web no hay
  * driver nativo (react-native-web avisaría y animaría en JS igualmente), así que solo se pide fuera de web. */
@@ -210,7 +214,7 @@ export function addSessionCards(client: PluginClientContext): () => void {
     }, [agentId, d.initiation, d.taskId]);
     useEffect(refresh, [refresh]);
 
-    const answer = (choice: "new" | "here") => {
+    const answer = (choice: Choice) => {
       setSent(choice);
       void client.rpc(responder, { agentId, choice, title: d.title, ...(choice === "new" && model ? { model } : {}) }).then(
         (r) => {
@@ -241,12 +245,14 @@ export function addSessionCards(client: PluginClientContext): () => void {
       ask = (
         <>
           <Acciones agentId={agentId} value={model} onChange={setModel} disabled={sent !== null} c={c} nativo={nativo}>
-            <Boton label="Hazlo aquí" onPress={() => answer("here")} disabled={sent !== null} c={c} />
-            <Boton label="Nueva sesión" onPress={() => answer("new")} primary disabled={sent !== null} c={c} />
+            <Boton label={LABEL.subagent} onPress={() => answer("subagent")} disabled={sent !== null} c={c} />
+            <Boton label={LABEL.workflow} onPress={() => answer("workflow")} disabled={sent !== null} c={c} />
+            <Boton label={LABEL.here} onPress={() => answer("here")} disabled={sent !== null} c={c} />
+            <Boton label={LABEL.new} onPress={() => answer("new")} primary disabled={sent !== null} c={c} />
           </Acciones>
           {relayed ? (
             <Text style={{ color: c.foregroundMuted, fontSize: 12, lineHeight: 17, marginTop: 10 }}>
-              Paseo se reinició mientras esperaba · tu elección ({sent === "here" ? "Hazlo aquí" : "Nueva sesión"}) se envió al agente como mensaje
+              Paseo se reinició mientras esperaba · tu elección ({LABEL[sent as Choice]}) se envió al agente como mensaje
             </Text>
           ) : null}
         </>

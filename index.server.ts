@@ -10,8 +10,9 @@ import { startMcpServer } from "./server/mcp.ts";
 import { DISMISS_DESCRIPTION, DISMISS_SCHEMA, INSTRUCTIONS, START_DESCRIPTION, START_SCHEMA } from "./server/textos.ts";
 
 // Claude Desktop's way of offering sessions, in Paseo: every Claude session gets this plugin's own MCP server (`rutador`)
-// when it opens, created or resumed, with `start_session`, `dismiss_task` and `coordinate_session`, plus session guidance.
-// The client draws `start_session` calls as cards («Nueva sesión» / «Hazlo aquí»).
+// when it opens — created or resumed — with `start_session`, `dismiss_task` and `coordinate_session`, and Desktop's "Starting
+// other sessions" guidance as the server's instructions. The client draws the `start_session` calls as cards
+// («Nueva sesión» / «Hazlo aquí» / «Subagente» / «Workflow»).
 export default function contribute(server: PluginServerContext) {
   let paseo: PaseoApi | null = null;
   const home = process.env.PASEO_HOME ?? join(homedir(), ".paseo");
