@@ -13,9 +13,9 @@ las mismas reglas que Desktop ("Starting other sessions"), y la conversación mu
   agente se pierde, pero los botones siguen funcionando: tu elección le llega al agente como mensaje (con el modelo que
   elegiste) y la tarjeta avisa de que Paseo se reinició.
 
-  ![Oferta: tarjeta «Nueva sesión» / «Hazlo aquí» esperando la respuesta](docs/media/1-oferta.png)
+  ![Oferta: tarjeta con «Nueva sesión» / «Hazlo aquí» / «Subagente» / «Workflow» esperando la respuesta](docs/media/1-oferta.png)
 
-  Estado enviado: al pulsar una opción, la tarjeta desactiva las dos hasta que el agente responde.
+  Estado enviado: al pulsar una opción, la tarjeta las desactiva todas hasta que el agente responde.
 
   ![Estado enviado: «Hazlo aquí» pulsado, botones desactivados](docs/media/3-hazlo-aqui.png)
 - **Modelo**: la tarjeta trae un chip con el modelo («Opus 5.5 ⌄») que despliega los del proveedor de la sesión (Opus,
