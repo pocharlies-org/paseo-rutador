@@ -33,16 +33,19 @@ function fixture(t: { after(fn: () => void): void }) {
       pages.get(id)!.agent.status = "running";
     },
   }) } };
-  const coord = new Coordinaciones(home);
+  // The supervisor's autopilot registry lives in the scratch home too: a test never reads the machine's real one.
+  const pares = join(home, "autopilot-pares.json");
+  const coord = new Coordinaciones(home, pares);
   const call = (action: string, extra: object = {}, caller = owner) => coord.tool(caller, { action, agent_id: producer, ...extra }, api as never);
   const snapshot = () => JSON.parse(readFileSync(join(home, "rutador-coordinaciones.json"), "utf8")).delegations[producer];
+  const par = (estado: string, extra: object = {}) => writeFileSync(pares, JSON.stringify({ version: 1, pares: { [producer]: { a_id: producer, estado, ...extra } } }));
   const finish = (text: string) => {
     const p = pages.get(producer)!;
     p.entries.push(row("assistant_message", text));
     p.agent.status = "idle"; p.agent.attentionReason = "finished"; p.agent.attentionTimestamp = randomUUID();
   };
   t.after(async () => { await coord.close(); rmSync(home, { recursive: true, force: true }); });
-  return { home, pages, sent, appended, api, coord, call, snapshot, finish, fail: () => { failSend = true; } };
+  return { home, pares, par, pages, sent, appended, api, coord, call, snapshot, finish, fail: () => { failSend = true; } };
 }
 
 test("a partial result wakes its coordinator; continuing and accepting does not activate worker autopilot", async (t) => {
@@ -139,12 +142,12 @@ test("a result completed during plugin downtime is recovered once without re-run
   await f.call("link", { objective: "Report" });
   await f.coord.close();
   f.finish("Done while disconnected");
-  const restored = new Coordinaciones(f.home);
+  const restored = new Coordinaciones(f.home, f.pares);
   t.after(() => restored.close());
   await restored.ready(f.api as never);
   assert.equal(f.sent.length, 1);
   assert.match(f.sent[0]!.text, /Done while disconnected/);
-  const restoredAgain = new Coordinaciones(f.home);
+  const restoredAgain = new Coordinaciones(f.home, f.pares);
   t.after(() => restoredAgain.close());
   await restoredAgain.ready(f.api as never);
   assert.equal(f.sent.length, 1);
@@ -156,7 +159,7 @@ test("idle with partial text but no completed outcome is not recovered as succes
   f.pages.get(producer)!.entries.push(row("assistant_message", "Partial before process loss"));
   f.pages.get(producer)!.agent.status = "idle";
   await f.coord.close();
-  const restored = new Coordinaciones(f.home);
+  const restored = new Coordinaciones(f.home, f.pares);
   t.after(() => restored.close());
   await restored.ready(f.api as never);
   assert.equal(f.snapshot().state, "paused");
@@ -221,7 +224,7 @@ test("a missing producer after restart does not trap release or another delegati
   await f.call("link", { objective: "Report" });
   await f.coord.close();
   f.pages.delete(producer);
-  const restored = new Coordinaciones(f.home);
+  const restored = new Coordinaciones(f.home, f.pares);
   t.after(() => restored.close());
   await restored.ready(f.api as never);
   assert.equal(f.snapshot().state, "paused");
@@ -237,7 +240,7 @@ test("reload before a queued prompt appears in history does not pause or re-send
   await f.call("continue", { prompt: "Next phase", request_id });
   const acceptedRow = f.pages.get(producer)!.entries.pop();
   await f.coord.close();
-  const restored = new Coordinaciones(f.home);
+  const restored = new Coordinaciones(f.home, f.pares);
   t.after(() => restored.close());
   await restored.ready(f.api as never);
   assert.equal(f.snapshot().state, "watching");
@@ -254,5 +257,48 @@ test("corrupted storage and invalid tool input fail closed", async (t) => {
   const f = fixture(t);
   await assert.rejects(f.coord.tool(owner, { action: "link", agent_id: "not-an-id" }, f.api as never));
   writeFileSync(join(f.home, "rutador-coordinaciones.json"), "{");
-  assert.throws(() => new Coordinaciones(f.home));
+  assert.throws(() => new Coordinaciones(f.home, f.pares));
+});
+
+// The fence against the autopilot (file.autopilot.pares.v1, the supervisor's registry): one driver per session.
+test("a producer with a live autopilot pair is not linked; an entregada one is", async (t) => {
+  const f = fixture(t);
+  for (const estado of ["activa", "pensando", "esperando", "humano", "degradada"]) {
+    f.par(estado);
+    await assert.rejects(f.call("link", { objective: "Report" }), /piloted by the autopilot; switch it off before delegating/, `estado ${estado}`);
+  }
+  f.par("entregada");
+  await f.call("link", { objective: "Report" });
+  assert.equal(f.snapshot().state, "watching", "a delivered pair is not a driver: linking proceeds");
+});
+
+test("no pair registry means no pairs: linking proceeds", async (t) => {
+  const f = fixture(t);
+  await f.call("link", { objective: "Report" });
+  assert.equal(f.snapshot().state, "watching");
+});
+
+test("a pair of another producer does not block this one", async (t) => {
+  const f = fixture(t);
+  writeFileSync(f.pares, JSON.stringify({ version: 1, pares: { [other]: { a_id: other, estado: "activa" } } }));
+  await f.call("link", { objective: "Report" });
+  assert.equal(f.snapshot().state, "watching");
+});
+
+test("an unreadable or corrupt pair registry fails closed: no link", async (t) => {
+  const f = fixture(t);
+  writeFileSync(f.pares, "{ no es json");
+  await assert.rejects(f.call("link", { objective: "Report" }), /corrupt \(not JSON\)/);
+  writeFileSync(f.pares, JSON.stringify({ version: 2, pares: {} }));
+  await assert.rejects(f.call("link", { objective: "Report" }), /not a v1/);
+});
+
+test("a pair that lands while the delegation is open blocks continue, not just link", async (t) => {
+  const f = fixture(t);
+  await f.call("link", { objective: "Report" });
+  f.finish("Partial");
+  await f.coord.ended(producer, "completed", f.api as never);
+  f.par("activa"); // the supervisor paired this session while the coordinator was deciding
+  await assert.rejects(f.call("continue", { prompt: "Next", request_id: randomUUID() }), /piloted by the autopilot/);
+  assert.equal(f.sent.filter((x) => x.id === producer).length, 0, "nothing is dispatched over a live pair");
 });

@@ -42,6 +42,7 @@ const accepted = (page: Page, id: string) => page.entries.some((e) =>
 /** One writer (this plugin), atomic state on the home volume; no worker prompt is retried after ambiguous admission. */
 export class Coordinaciones {
   private readonly path: string;
+  private readonly paresPath: string;
   private data: z.infer<typeof storeSchema>;
   private subscriptions = new Map<string, () => void>();
   private disposed = false;
@@ -50,9 +51,11 @@ export class Coordinaciones {
   private restoring: Promise<void> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(home: string) {
+  constructor(home: string, paresPath?: string) {
     // CONTRACT: file.paseo.delegations.v1
     this.path = join(home, "rutador-coordinaciones.json");
+    // The supervisor's autopilot registry (file.autopilot.pares.v1): the same home in paseo-0 and company-0.
+    this.paresPath = paresPath ?? join(homedir(), ".company", "jira-trigger", "autopilot-pares.json");
     this.data = existsSync(this.path) ? storeSchema.parse(JSON.parse(readFileSync(this.path, "utf8"))) : { version: 1, delegations: {} };
   }
 
@@ -196,12 +199,35 @@ export class Coordinaciones {
     });
   }
 
+  /** The fence against the autopilot (14-11-2026): a producer with a pair in any estado other than `entregada` already has a
+   * driver — the auditor session B — and must not get a second one. The registry is the supervisor's (single writer, atomic
+   * writes): absent means no pairs; unreadable or corrupt fails CLOSED, because without reading it there is no guarantee of
+   * no pair. Extra Par fields pass; only `estado` and `a_id` are read. */
   private noAutopilot(id: string): void {
-    const path = join(homedir(), ".local", "state", "paseo-sugiere", "autopilot.json");
-    if (!existsSync(path)) return;
-    const state = JSON.parse(readFileSync(path, "utf8"));
-    if (!state || typeof state !== "object" || Array.isArray(state)) throw new Error("Invalid autopilot state; cannot establish ownership");
-    if (state[id]?.on === true) throw new Error("Producer has autopilot enabled; disable it before delegating, do not run two drivers");
+    // CONTRACT: file.autopilot.pares.v1
+    let raw: string;
+    try {
+      raw = readFileSync(this.paresPath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw new Error(`Autopilot pair registry unreadable; cannot establish ownership: ${String(error)}`);
+    }
+    let pares: Record<string, unknown>;
+    try {
+      const store = JSON.parse(raw) as { version?: unknown; pares?: unknown };
+      if (store?.version !== 1 || typeof store.pares !== "object" || store.pares === null || Array.isArray(store.pares)) {
+        throw new Error("Autopilot pair registry is not a v1 {version, pares}; cannot establish ownership");
+      }
+      pares = store.pares as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new Error("Autopilot pair registry is corrupt (not JSON); cannot establish ownership");
+      throw error;
+    }
+    for (const [aId, value] of Object.entries(pares)) {
+      const par = (value ?? {}) as { a_id?: unknown; estado?: unknown };
+      if (aId !== id && par.a_id !== id) continue;
+      if (par.estado !== "entregada") throw new Error("Producer is piloted by the autopilot; switch it off before delegating");
+    }
   }
 
   private status(d: Delegation): McpToolResult {

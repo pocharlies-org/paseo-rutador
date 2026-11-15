@@ -15,6 +15,21 @@ contracts:
       Each entry has ownerId and producerId UUIDs, objective, state watching|result|dispatching|paused,
       user identity, ownerActivity and producerActivity human-input identities, requestId, sentIds, attention timestamp,
       result, reason, noticeId and notice pending|sending|sent|null. Any entry reserves ownership until release.
-      Writer: paseo-rutador only. Consumer: paseo-sugiere refuses autopilot activation or sends for a reserved
-      producer. Corrupt data fails closed. No consumer may modify the writer's store. A watching entry with a
+      Writer: paseo-rutador only. Consumer: the company supervisor, whose POST /autopilot/par answers 409 when the rutador
+      holds an active delegation over A (since the auditor autopilot, 14-11-2026, the fence reads the pair registry, not this
+      store). Corrupt data fails closed. No consumer may modify the writer's store. A watching entry with a
       requestId not yet visible in the daemon timeline remains pending after reload and is never re-dispatched.
+  - id: file.autopilot.pares.v1
+    kind: file-schema
+    value: autopilot-pares.json
+    role: consumer
+    files:
+      - server/coordinaciones.ts
+    status: active
+    note: >-
+      14-11-2026 (autopilot auditor). Productor: el supervisor de la compania (su alta vive en su CONTRACTS.yaml);
+      consumidor: este plugin, la valla de coordinate_session. Fichero en ~/.company/jira-trigger (el mismo home en
+      paseo-0 y company-0), schema {version:1, pares:{[a_id]: Par}}; un solo escritor, escritura atomica. La valla: un
+      productor con pareja en un estado distinto de `entregada` no se enlaza («Producer is piloted by the autopilot;
+      switch it off before delegating»). Ausente = sin parejas, se sigue; ilegible o corrupto = fail closed (throw).
+      Los campos extra del Par pasan.
