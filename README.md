@@ -40,7 +40,9 @@ Para un productor independiente que ya existe en el mismo workspace, `coordinate
 
 Mientras está trabajando, el coordinador cierra con `ESPERA: sesion <agent_id>` y recibe un `EVENTO` por fin de turno o interrupción.
 El fin de turno puede ser parcial: el coordinador verifica los criterios y continúa al mismo productor. Los hijos nativos conservan su
-`notifyOnFinish`; no se enlazan también aquí. El productor enlazado debe tener autopilot apagado, y `paseo-sugiere` respeta su propietario.
+`notifyOnFinish`; no se enlazan también aquí. El productor enlazado no puede llevar pareja del autopilot: la valla lee el registro
+`~/.company/jira-trigger/autopilot-pares.json` del supervisor (contrato `file.autopilot.pares.v1`) y rechaza un productor con pareja
+en un estado distinto de `entregada`; ausente sigue, ilegible o corrupto falla cerrado.
 
 El registro atómico `$PASEO_HOME/rutador-coordinaciones.json` conserva propiedad, resultados e IDs de envío. Tras recarga se reconcilia
 con el historial y el estado real al primer hook o RPC que proporciona la API de Paseo; no hay temporizador ni sondeo de modelos.
